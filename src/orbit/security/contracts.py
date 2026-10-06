@@ -13,18 +13,34 @@
 # limitations under the License.
 """Authentication and authorization extension contracts."""
 
-from typing import Protocol, runtime_checkable
+from __future__ import annotations
 
-from orbit.asgi.request import Request
-from orbit.security.principal import Principal
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from orbit.asgi.request import Request
 
 
 @runtime_checkable
 class Authenticator(Protocol):
     """Authenticate an ASGI request through an optional provider plugin."""
 
-    async def authenticate(self, request: Request) -> Principal | None:
-        """Return the verified principal, or ``None`` for anonymous requests."""
+    async def authenticate(self, request: Request) -> object | None:
+        """Return an opaque authenticated value, or ``None`` for anonymous requests."""
 
 
-__all__ = ["Authenticator"]
+@runtime_checkable
+class RouteAuthorizer(Protocol):
+    """Optional extension hook for evaluating route requirement labels.
+
+    Core stores bounded route metadata but does not interpret roles or policies. Applications
+    install an authorizer from a capability package when they use protected routes.
+    """
+
+    async def authorize_roles(
+        self, principal: object | None, required_roles: frozenset[str]
+    ) -> None:
+        """Return only when the current principal satisfies every required route label."""
+
+
+__all__ = ["Authenticator", "RouteAuthorizer"]

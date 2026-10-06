@@ -48,14 +48,14 @@ to a plugin and requires an external backend when workers need a shared view.
 ## Rate-limit backpressure
 
 `AsyncRateLimiter` in `orbit-resilience` waits asynchronously for per-key token-bucket capacity
-before a provider operation. It is separate from Core's nonblocking HTTP limiter: the Core
-baseline can reject an HTTP/Admin request with `429`, while the optional utility delays an
-outbound operation within its caller's budget. `resilient_call` can acquire one token for every
+before a provider operation. `orbit-security` owns HTTP rate limiting, and the optional Admin
+package applies its own local limit. The resilience utility delays an outbound operation within its
+caller's budget. `resilient_call` can acquire one token for every
 provider attempt; configure its wait timeout and retry policy deliberately. A rate-limit wait
 timeout is classified as local resource pressure and is not retried by the default classifier.
 The built-in implementation is process-local and not FIFO; a shared quota requires a separately
 installed adapter implementing `orbit_resilience.RateLimiter`. The capability package remains
-independent of `orbit-core`; Core's HTTP limiter is a separate built-in baseline.
+independent of `orbit-core`.
 
 ## Failure policy
 

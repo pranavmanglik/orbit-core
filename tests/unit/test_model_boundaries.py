@@ -21,7 +21,6 @@ from types import MappingProxyType
 import pytest
 
 from orbit._immutability import FrozenDict, freeze_mapping, freeze_value, validate_mapping
-from orbit.admin.models import AdminAuditRecord
 from orbit.application.models import ApplicationSummary
 from orbit.container import Scope
 from orbit.diagnostics import DiagnosticSnapshot, LatencyBucket, RequestRecord
@@ -29,7 +28,6 @@ from orbit.diagnostics.inspection import CompositionSnapshot, ProviderDescriptio
 from orbit.errors import ErrorCategory, ErrorResponse, OrbitProblem
 from orbit.events import Event
 from orbit.health import HealthReport
-from orbit.security import OAuthTokenResponse
 from orbit.services import ServiceDescriptor
 from orbit.state import ApplicationState
 from orbit.state.models import ComponentState
@@ -281,12 +279,6 @@ def test_runtime_models_reject_coerced_operational_values() -> None:
     with pytest.raises(ValueError):
         ApplicationState(application_id=new_application_id(), service_count=True)
     with pytest.raises(ValueError):
-        AdminAuditRecord(action="service.restart", success=1)  # type: ignore[arg-type]
-    with pytest.raises(ValueError):
-        OAuthTokenResponse(access_token="token", expires_in="60")  # type: ignore[arg-type]
-    with pytest.raises(ValueError):
-        AdminAuditRecord(action=b"service.restart", success=True)  # type: ignore[arg-type]
-    with pytest.raises(ValueError):
         OrbitProblem(
             code=b"runtime.failed",  # type: ignore[arg-type]
             message="failed",
@@ -420,22 +412,3 @@ def test_diagnostic_snapshot_collections_are_bounded(monkeypatch) -> None:
             request_count=501,
             status_counts=_MisreportingStatusCounts(),  # type: ignore[arg-type]
         )
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"target": "service\nname"},
-        {"subject": "operator\x7f"},
-        {"provider": "test\tprovider"},
-        {"error_code": "provider failure"},
-        {"error_code": "x" * 128},
-        {"occurred_at": datetime(2026, 1, 1)},
-    ],
-)
-def test_admin_audit_records_reject_unsafe_or_ambiguous_fields(
-    kwargs: dict[str, object],
-) -> None:
-    """Audit records remain safe to render and comparable across deployment time zones."""
-    with pytest.raises(ValueError):
-        AdminAuditRecord(action="service.restart", success=True, **kwargs)  # type: ignore[arg-type]

@@ -38,6 +38,7 @@ Security = "https://github.com/orbit-projects/orbit-core/security/policy"
 
 [project.optional-dependencies]
 development-server = ["uvicorn>=0.34,<1"]
+process-plugins = ["grpcio>=1.84,<2", "protobuf>=7.35.1,<8"]
 server = [
   "gunicorn>=26.2,<27",
   "uvicorn>=0.34,<1",
@@ -49,21 +50,25 @@ dev = [
   "pytest-cov>=7,<8",
   "ruff>=0.8,<1",
   "mypy>=1.13,<2",
+  "mypy-protobuf>=3.7,<4",
+  "types-grpcio>=1.0.0.20251009",
+  "types-protobuf>=7.35.1,<8",
   "build>=1.2,<2",
   "hatchling>=1.27",
+  "grpcio-tools>=1.84,<2",
   "pip-audit>=2.10,<3",
   "pip>=26.2,<27",
   "uv==0.12.13",
 ]
 
-[dependency-groups]
-dev = ["orbit-testing>=0.1.0a1,<0.2"]
-
-[tool.uv.sources]
-orbit-testing = { path = "../orbit-testing", editable = true }
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/orbit"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/orbit/plugins/v1/process_plugin.proto" = "orbit/plugins/v1/process_plugin.proto"
+
+[tool.hatch.build.targets.sdist.force-include]
+"src/orbit/plugins/v1/process_plugin.proto" = "src/orbit/plugins/v1/process_plugin.proto"
 
 [tool.hatch.version]
 path = "src/orbit/_version.py"
@@ -78,6 +83,12 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = [
+  "src/orbit/plugins/v1/process_plugin_pb2.py",
+  "src/orbit/plugins/v1/process_plugin_pb2.pyi",
+  "src/orbit/plugins/v1/process_plugin_pb2_grpc.py",
+  "src/orbit/plugins/v1/process_plugin_pb2_grpc.pyi",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

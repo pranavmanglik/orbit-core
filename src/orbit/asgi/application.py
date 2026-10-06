@@ -38,12 +38,11 @@ from orbit.asgi.response import Response
 from orbit.asgi.types import Receive, Scope, Send
 from orbit.diagnostics.models import RequestRecord
 from orbit.diagnostics.tracing import Tracer
-from orbit.errors import RoutingError, SecurityError
+from orbit.errors import ErrorCategory, OrbitProblem, RoutingError, SecurityError
 from orbit.lifecycle import LifecyclePhase
 from orbit.routing import Router
-from orbit.security.authorization import require_roles
 from orbit.security.context import bind_principal, current_principal, reset_principal
-from orbit.security.contracts import Authenticator
+from orbit.security.contracts import Authenticator, RouteAuthorizer
 from orbit.types import RequestId, new_request_id
 
 if TYPE_CHECKING:
@@ -61,8 +60,9 @@ class ASGIApplication:
     """Serve HTTP and lifespan using one composed Core application.
 
     The host must support lifespan. Requests are bounded by size, duration and concurrency.
-    Authentication is explicit; there is no permissive fallback for admin routes. Request
-    scopes live through streaming responses and close on success, failure or disconnect.
+    Authentication and route authorization are explicit extension hooks; there is no permissive
+    fallback for protected routes. Request scopes live through streaming responses and close on
+    success, failure or disconnect.
     """
 
     def __init__(
@@ -71,6 +71,7 @@ class ASGIApplication:
         router: Router | None = None,
         *,
         authenticator: Authenticator | None = None,
+        authorizer: RouteAuthorizer | None = None,
         tracer: Tracer | None = None,
     ) -> None:
         from orbit.application import Application
@@ -81,11 +82,14 @@ class ASGIApplication:
             raise TypeError("ASGIApplication router must be a Router instance.")
         if authenticator is not None and not isinstance(authenticator, Authenticator):
             raise TypeError("ASGIApplication authenticator must implement Authenticator.")
+        if authorizer is not None and not isinstance(authorizer, RouteAuthorizer):
+            raise TypeError("ASGIApplication authorizer must implement RouteAuthorizer.")
         if tracer is not None and not isinstance(tracer, Tracer):
             raise TypeError("ASGIApplication tracer must implement Tracer.")
         self._application = application
         self._router = router if router is not None else application.router
         self._authenticator = authenticator
+        self._authorizer = authorizer
         self._tracer = tracer
         self._middleware: list[Middleware] = []
         self._requests: set[asyncio.Task[Any]] = set()
@@ -330,12 +334,6 @@ class ASGIApplication:
                         (b"x-content-type-options", b"nosniff"),
                     ]
                 )
-                if self._is_admin_scope_path(scope):
-                    message["headers"] = [
-                        (key, value) for key, value in headers if key != b"cache-control"
-                    ]
-                    message["headers"].append((b"cache-control", b"no-store"))
-                    headers = message["headers"]
                 if (
                     len(headers) > Response.MAX_HEADER_COUNT
                     or sum(len(key) + len(value) + 2 for key, value in headers)
@@ -489,21 +487,6 @@ class ASGIApplication:
                 continue
             return None
         return trace_id
-
-    @staticmethod
-    def _is_admin_scope_path(scope: Scope) -> bool:
-        """Detect an admin response after removing the ASGI mount prefix safely."""
-        path = scope.get("path")
-        root = scope.get("root_path", "")
-        if not isinstance(path, str) or not isinstance(root, str):
-            return False
-        if root == "/":
-            mounted_path = path
-        elif root and (path == root or path.startswith(root + "/")):
-            mounted_path = path[len(root) :] or "/"
-        else:
-            mounted_path = path
-        return mounted_path == "/admin" or mounted_path.startswith("/admin/")
 
     async def _read_request(self, scope: Scope, receive: Receive, request_id: RequestId) -> Request:
         limit = self._application.config.application.max_body_bytes
@@ -908,16 +891,11 @@ class ASGIApplication:
         if self._tracer is None:
             return await self._dispatch(request)
         route_template: str | None = None
-        is_core_endpoint = (
-            request.path
-            in {
-                "/openapi.json",
-                "/health/live",
-                "/health/ready",
-            }
-            or request.path == "/admin"
-            or request.path.startswith("/admin/")
-        )
+        is_core_endpoint = request.path in {
+            "/openapi.json",
+            "/health/live",
+            "/health/ready",
+        }
         if not is_core_endpoint:
             try:
                 route, _ = self._router.match(request.method, request.path)
@@ -959,12 +937,6 @@ class ASGIApplication:
                 )
             if self._application.lifecycle.phase is not LifecyclePhase.RUNNING:
                 return Response.json({"code": "runtime.not-ready"}, status=503)
-            if current.path == "/admin" or current.path.startswith("/admin/"):
-                if not self._application.config.application.admin_enabled:
-                    return Response.json({"code": "routing.route-not-found"}, status=404)
-                from orbit.admin.application import AdminApplication
-
-                return await AdminApplication(self._application).handle(current)
             allowed = self._router.allowed_methods(current.path)
             if current.method == "OPTIONS" and allowed:
                 return Response(status=204, headers={"allow": ", ".join(allowed)})
@@ -979,7 +951,15 @@ class ASGIApplication:
                     )
                 return Response.json({"code": exc.problem.code}, status=404)
             if route.metadata.roles:
-                require_roles(current_principal(), route.metadata.roles)
+                if self._authorizer is None:
+                    raise SecurityError(
+                        OrbitProblem(
+                            code="security.forbidden",
+                            message="An authorizer is required for this route.",
+                            category=ErrorCategory.SECURITY,
+                        )
+                    )
+                await self._authorizer.authorize_roles(current_principal(), route.metadata.roles)
             routed = replace(current, path_parameters=parameters)
             if route.request_model is not None:
                 try:

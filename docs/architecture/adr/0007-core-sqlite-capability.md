@@ -1,6 +1,6 @@
 # ADR 0007: Core SQL capability and SQLite baseline
 
-- Status: Accepted
+- Status: Superseded by [ADR 0022](0022-extract-database-and-authentication.md)
 - Date: 2026-10-04
 
 ## Context

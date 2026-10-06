@@ -67,17 +67,17 @@ wording in the project prompt.
 - Routing groups, middleware, route API-version metadata, OpenAPI generation, and shared error schema.
 - Security policies, opt-in static-user Basic Auth, bearer authentication contracts, revocation,
   Admin rate limiting, OAuth/OIDC/JWKS contracts, and token validation policies. The separately
-  installable `orbit-jwt` repository owns `PyJWTVerifier` and the PyJWT dependency.
+  installable `orbit-auth-jwt` repository owns `PyJWTVerifier` and the PyJWT dependency.
   General request-level rate limiting now lives in the separately installable `orbit-security`
   package and reuses Core's bounded in-process limiter; Core no longer exports that middleware.
 - Structured Core mappings are detached and recursively immutable with explicit cycle, nesting, and
   container-work limits; direct HTTP request models enforce aggregate header, body, and query caps.
 - Admin API, audit records, service/task operations, remote `AdminClient`, bounded Core metric
   instruments/snapshots, structured logging, tracing, and diagnostics export. Prometheus exposition
-  and its `/metrics` route live in the separate `orbit-metrics` and `orbit-prometheus` repositories;
+  and its `/metrics` route live in the separate `orbit-metrics` and `orbit-metrics-prometheus` repositories;
   application-level resilience utilities live in `orbit-resilience`.
 - Optional caching is split into `orbit-cache` (provider-neutral async bytes-cache contract) and
-  `orbit-redis` (redis-py adapter plus an opt-in Core plugin that registers the capability and owns
+  `orbit-cache-redis` (redis-py adapter plus an opt-in Core plugin that registers the capability and owns
   client shutdown). Neither package is bundled into Core; Redis is not installed unless the
   application chooses the adapter.
 - The SQL capability publishes a shared container key; `orbit-sql-postgres` offers both explicit
@@ -171,7 +171,7 @@ so hosted artifact upload and build-provenance attestation remain unverified.
 
 Additional database and messaging adapters, expanded CLI streaming, and cloud-specific operations
 remain separate ecosystem or roadmap work; they are not prerequisites for declaring the
-provider-neutral Core boundary stable. The initial `orbit-cache → orbit-redis` capability/adapter/
+provider-neutral Core boundary stable. The initial `orbit-cache → orbit-cache-redis` capability/adapter/
 plugin chain is implemented locally but is not published or certified as stable.
 
 ## Working rules

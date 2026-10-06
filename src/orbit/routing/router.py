@@ -27,7 +27,7 @@ from orbit.routing.handler import RouteHandler
 from orbit.routing.models import RouteMetadata
 from orbit.routing.route import Route
 from orbit.security.roles import validate_role_collection
-from orbit.types import ServiceId
+from orbit.types import RouteId, ServiceId
 
 _SUPPORTED_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 
@@ -69,11 +69,30 @@ def _parameter(segment: str) -> bool:
     return segment.startswith("{") and segment.endswith("}")
 
 
+class _RouteNode:
+    """One segment in the router's static-first path index."""
+
+    __slots__ = ("static", "parameter", "routes")
+
+    def __init__(self) -> None:
+        self.static: dict[str, _RouteNode] = {}
+        self.parameter: _RouteNode | None = None
+        self.routes: list[Route] = []
+
+
 class Router:
-    """Match static paths before parameter paths; trailing slashes remain significant."""
+    """Match indexed paths with static precedence; trailing slashes remain significant.
+
+    Registration keeps a segment trie for dispatch and sets for duplicate detection, so request
+    matching depends on the relevant path branches instead of scanning every registered route.
+    """
 
     def __init__(self) -> None:
         self._routes: list[Route] = []
+        self._root = _RouteNode()
+        self._names: set[str] = set()
+        self._ids: set[RouteId] = set()
+        self._route_shapes: set[tuple[str, tuple[tuple[bool, str], ...]]] = set()
         self._frozen = False
 
     @property
@@ -104,17 +123,32 @@ class Router:
             not callable(middleware) for middleware in route.middleware
         ):
             raise _error("invalid-middleware", "Route middleware must be callable tuple members.")
-        shape = tuple("{}" if _parameter(s) else s for s in _parts(route.metadata.path))
-        for existing in self._routes:
-            old = existing.metadata
-            old_shape = tuple("{}" if _parameter(s) else s for s in _parts(old.path))
-            if (
-                old.name == route.metadata.name
-                or old.id == route.metadata.id
-                or (old.method == route.metadata.method and shape == old_shape)
-            ):
-                raise _error("duplicate-route", f"Duplicate/ambiguous route {route.metadata.name}.")
+        parts = _parts(route.metadata.path)
+        shape = tuple(
+            (not _parameter(segment), segment if not _parameter(segment) else "")
+            for segment in parts
+        )
+        route_key = (route.metadata.method, shape)
+        if (
+            route.metadata.name in self._names
+            or route.metadata.id in self._ids
+            or route_key in self._route_shapes
+        ):
+            raise _error("duplicate-route", f"Duplicate/ambiguous route {route.metadata.name}.")
+
+        node = self._root
+        for is_static, segment in shape:
+            if is_static:
+                node = node.static.setdefault(segment, _RouteNode())
+            else:
+                if node.parameter is None:
+                    node.parameter = _RouteNode()
+                node = node.parameter
+        node.routes.append(route)
         self._routes.append(route)
+        self._names.add(route.metadata.name)
+        self._ids.add(route.metadata.id)
+        self._route_shapes.add(route_key)
 
     def route(
         self,
@@ -206,33 +240,54 @@ class Router:
     def _candidates(self, path: str) -> list[tuple[Route, dict[str, str]]]:
         _validate_dispatch_path(path)
         actual = _parts(path)
-        matches: list[tuple[tuple[bool, ...], Route, dict[str, str]]] = []
-        for route in self._routes:
-            expected = _parts(route.metadata.path)
-            if len(actual) != len(expected):
-                continue
-            parameters: dict[str, str] = {}
-            for pattern, value in zip(expected, actual, strict=True):
-                if _parameter(pattern) and value:
-                    parameters[pattern[1:-1]] = value
-                elif pattern != value:
-                    break
-            else:
-                specificity = tuple(not _parameter(s) for s in expected)
-                matches.append((specificity, route, parameters))
-        if not matches:
+        routes = self._matching_routes(actual)
+        if not routes:
             return []
-        best = max(item[0] for item in matches)
-        return [(route, params) for score, route, params in matches if score == best]
+        return [
+            (
+                route,
+                {
+                    segment[1:-1]: value
+                    for segment, value in zip(_parts(route.metadata.path), actual, strict=True)
+                    if _parameter(segment)
+                },
+            )
+            for route in routes
+        ]
 
-    def allowed_methods(self, path: str) -> tuple[str, ...]:
-        """Return supported methods for the best matching path, including implicit methods."""
-        methods = {r.metadata.method for r, _ in self._candidates(path)}
+    def _matching_routes(self, actual: tuple[str, ...]) -> list[Route]:
+        """Return the highest-precedence terminal path matches using iterative trie traversal."""
+        pending: list[tuple[_RouteNode, int]] = [(self._root, 0)]
+        while pending:
+            node, index = pending.pop()
+            if index == len(actual):
+                if node.routes:
+                    return node.routes
+                continue
+
+            segment = actual[index]
+            if node.parameter is not None and segment:
+                pending.append((node.parameter, index + 1))
+            static = node.static.get(segment)
+            if static is not None:
+                # LIFO order makes a complete static branch win over a parameter branch, while
+                # still allowing the parameter branch when the static prefix has no full route.
+                pending.append((static, index + 1))
+        return []
+
+    @staticmethod
+    def _allowed_methods(candidates: list[tuple[Route, dict[str, str]]]) -> tuple[str, ...]:
+        """Build the Allow response from the already resolved highest-precedence path group."""
+        methods = {route.metadata.method for route, _ in candidates}
         if "GET" in methods:
             methods.add("HEAD")
         if methods:
             methods.add("OPTIONS")
         return tuple(sorted(methods))
+
+    def allowed_methods(self, path: str) -> tuple[str, ...]:
+        """Return supported methods for the best matching path, including implicit methods."""
+        return self._allowed_methods(self._candidates(path))
 
     def openapi(
         self, *, title: str = "Orbit Application", version: str = "0.1.0"
@@ -341,7 +396,7 @@ class Router:
             raise _error(
                 "method-not-allowed",
                 "Method is not allowed.",
-                allow=", ".join(self.allowed_methods(path)),
+                allow=", ".join(self._allowed_methods(candidates)),
             )
         raise _error("route-not-found", "Route was not found.")
 

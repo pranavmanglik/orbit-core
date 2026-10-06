@@ -26,10 +26,10 @@ protocol and native/process host are longer-term work, not part of the current i
 
 These are Core contracts and reference implementations. They do not include provider SDKs or claim
 durability, distributed coordination, load-test evidence, or production certification. Optional
-workspace packages currently include `orbit-data`, `orbit-cache`, `orbit-redis`, `orbit-sql`,
-`orbit-sql-postgres`, `orbit-jwt`, `orbit-security`, `orbit-testing`, `orbit-metrics`,
-`orbit-prometheus`, `orbit-resilience`, `orbit-logging`, `orbit-devtools`, `orbit-gateway`,
-`orbit-kafka`, `orbit-migrations`, `orbit-mongo`, `orbit-nats`, `orbit-rabbitmq`, and `orbit-vector`.
+workspace packages currently include `orbit-data`, `orbit-cache`, `orbit-cache-redis`, `orbit-sql`,
+`orbit-sql-postgres`, `orbit-auth-jwt`, `orbit-security`, `orbit-testing`, `orbit-metrics`,
+`orbit-metrics-prometheus`, `orbit-resilience`, `orbit-logging`, `orbit-devtools`, `orbit-gateway`,
+`orbit-events-kafka`, `orbit-migrations`, `orbit-nosql-mongo`, `orbit-events-nats`, `orbit-events-rabbitmq`, and `orbit-vector`.
 They are local workspaces, not published releases. See the
 [Core/plugin ownership map](docs/architecture/core-and-plugin-ownership.md).
 

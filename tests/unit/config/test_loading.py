@@ -129,8 +129,8 @@ def test_invalid_config_never_exposes_submitted_values(environment):
 
 
 def test_environment_coercion():
-    config = load_application_config({"ORBIT_NAME": "test", "ORBIT_ADMIN_ENABLED": "true"})
-    assert config.admin_enabled
+    config = load_application_config({"ORBIT_NAME": "test", "ORBIT_MAX_CONCURRENT_REQUESTS": "42"})
+    assert config.max_concurrent_requests == 42
 
 
 def test_application_defaults_preserve_declared_numeric_types() -> None:
@@ -139,7 +139,6 @@ def test_application_defaults_preserve_declared_numeric_types() -> None:
     assert isinstance(config.lifecycle_timeout, float)
     assert isinstance(config.health_timeout, float)
     assert isinstance(config.request_timeout, float)
-    assert isinstance(config.admin_rate_period, float)
 
 
 def test_application_header_limit_is_bounded():
@@ -185,8 +184,6 @@ def test_application_concurrency_limit_is_bounded() -> None:
         "max_response_bytes",
         "max_header_bytes",
         "max_concurrent_requests",
-        "admin_rate_limit",
-        "admin_rate_period",
     ],
 )
 def test_application_numeric_limits_reject_booleans(field: str) -> None:
@@ -204,8 +201,6 @@ def test_application_numeric_limits_reject_booleans(field: str) -> None:
         "max_response_bytes",
         "max_header_bytes",
         "max_concurrent_requests",
-        "admin_rate_limit",
-        "admin_rate_period",
     ],
 )
 def test_application_numeric_limits_reject_string_coercion(field: str) -> None:
@@ -214,7 +209,7 @@ def test_application_numeric_limits_reject_string_coercion(field: str) -> None:
         ApplicationConfig(name="test", **{field: "1"})
 
 
-@pytest.mark.parametrize("field", ["admin_enabled", "trust_forwarded_headers"])
+@pytest.mark.parametrize("field", ["trust_forwarded_headers"])
 def test_application_flags_reject_coercion(field: str) -> None:
     """Security and administration flags require actual booleans."""
     with pytest.raises(ValidationError):
@@ -237,12 +232,10 @@ def test_strict_application_environment_values_are_decoded_before_validation() -
             "ORBIT_NAME": "test",
             "ORBIT_REQUEST_TIMEOUT": "15.5",
             "ORBIT_MAX_CONCURRENT_REQUESTS": "250",
-            "ORBIT_ADMIN_ENABLED": "true",
         }
     )
     assert config.request_timeout == 15.5
     assert config.max_concurrent_requests == 250
-    assert config.admin_enabled is True
 
     custom = load_config(
         ApplicationConfig,

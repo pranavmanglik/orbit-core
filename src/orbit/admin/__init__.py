@@ -11,17 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Core-backed administrative inspection foundation."""
+"""Stable extension contract used by optional Admin packages."""
 
-from orbit.admin.application import AdminApplication
-from orbit.admin.client import AdminClient, AdminClientError, AdminHTTPResponse, AdminTransport
 from orbit.admin.contracts import AdminContribution
 
-__all__ = [
-    "AdminContribution",
-    "AdminApplication",
-    "AdminClient",
-    "AdminClientError",
-    "AdminHTTPResponse",
-    "AdminTransport",
-]
+__all__ = ["AdminContribution"]

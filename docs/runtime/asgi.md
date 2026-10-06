@@ -68,8 +68,8 @@ The ASGI `root_path` is validated as a canonical path and removed before route d
 mounted applications receive the same route paths locally and behind a proxy.
 
 The shared router applies the same canonical-path rules when used directly by Core callers, so
-programmatic dispatch cannot bypass the ASGI path boundary. Administrative responses remain
-`no-store`, including when the ASGI mount root is `/`.
+programmatic dispatch cannot bypass the ASGI path boundary. Optional Admin routes set their own
+`no-store` headers inside `orbit-admin`.
 The runtime owns `X-Request-ID` and `X-Content-Type-Options`; handler-supplied values for those
 headers are removed before canonical values are emitted, preventing ambiguous duplicate security
 or correlation headers.
@@ -145,7 +145,7 @@ General request-level rate limiting is optional middleware in `orbit-security`. 
 bounded in-process token bucket and emits `x-ratelimit-limit`, `x-ratelimit-remaining`, and
 `retry-after` headers. Its default key is the validated client host; deployments may provide an
 explicit bounded identity or tenant key. Each worker has a separate bucket, so this is not a
-distributed quota. Core retains its local limiter only for protecting built-in Admin operations.
+distributed quota. Admin operations use the limiter owned by the optional `orbit-admin` package.
 
 ## Routing and middleware
 

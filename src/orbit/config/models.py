@@ -51,9 +51,6 @@ class ApplicationConfig(BaseModel):
     )
     max_header_bytes: StrictInt = Field(default=64 * 1024, ge=1024, le=16 * 1024 * 1024)
     max_concurrent_requests: StrictInt = Field(default=1000, ge=1, le=_MAX_CORE_CAPACITY)
-    admin_enabled: StrictBool = False
-    admin_rate_limit: StrictInt = Field(default=120, ge=1, le=100_000)
-    admin_rate_period: StrictFloat = Field(default=60.0, gt=0, le=86_400)
     trust_forwarded_headers: StrictBool = False
     trusted_proxies: tuple[StrictStr, ...] = ()
 
@@ -65,8 +62,6 @@ class ApplicationConfig(BaseModel):
         "max_response_bytes",
         "max_header_bytes",
         "max_concurrent_requests",
-        "admin_rate_limit",
-        "admin_rate_period",
         mode="before",
     )
     @classmethod

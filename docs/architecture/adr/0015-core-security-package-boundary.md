@@ -1,6 +1,6 @@
 # ADR 0015: Keep the Basic Auth baseline in Core and extend orbit-security optionally
 
-- Status: Accepted
+- Status: Superseded by [ADR 0022](0022-extract-database-and-authentication.md)
 - Date: 2026-10-04
 
 ## Context
@@ -19,7 +19,7 @@ Keep the opt-in Basic Auth implementation and provider-neutral security contract
 its current request rate-limiting middleware is such a policy. Do not create parallel
 basic/professional security distributions that duplicate the Core baseline. Keep concrete identity
 providers and vendor integrations in separate optional packages, including the existing
-`orbit-jwt` adapter and any future OAuth/OIDC integrations.
+`orbit-auth-jwt` adapter and any future OAuth/OIDC integrations.
 
 ## Alternatives considered
 
@@ -46,6 +46,6 @@ providers and vendor integrations in separate optional packages, including the e
 - `src/orbit/security/basic.py`
 - `src/orbit/security/contracts.py`
 - `orbit-security` sibling workspace: `src/orbit_security/ratelimit.py`
-- `orbit-jwt` sibling workspace: `src/orbit_jwt/verifier.py`
+- `orbit-auth-jwt` sibling workspace: `src/orbit_auth_jwt/verifier.py`
 - `docs/security/overview.md`
 - `docs/architecture/core-and-plugin-ownership.md`

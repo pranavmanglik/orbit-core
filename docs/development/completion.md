@@ -61,7 +61,10 @@ Current evidence score: **87 / 100** — Core contracts 23/25, reliability 19/20
 supply chain 10/15, tests and compatibility 20/20, documentation and API governance 10/10, and
 packaging and release operations 5/10. The local Core gate passes; hosted workflow results,
 deployment pressure testing, and hosted release provenance remain open and therefore are not
-counted as complete.
+counted as complete. Authentication/database and Admin implementation boundaries are now extracted
+locally; the first stable public-API review remains open (see ADRs 0022 and 0025). The latest
+boundary changes pass on Python 3.11; earlier real-host matrix evidence on Python 3.11–3.14 does
+not verify this exact worktree. Hosted CI, reviewer approval, and production validation remain open.
 
 Passing local checks is evidence about the implementation, not a production certification. This
 work includes separating existing integrations into local sibling package workspaces; it does not
@@ -152,8 +155,10 @@ The latest local follow-up makes `AdminClient` event-loop ownership explicit and
 sequential reuse and concurrent first-use races: one instance binds atomically to one loop and
 rejects use from another. Additional admin-client tests now cover health refresh routing, malformed
 adapter results, non-mapping response bodies, and recovery after synchronous transport exceptions.
-Authorization helpers now require the validated Core `Principal` type, rejecting role-shaped
-objects that have not crossed Core's identity boundary.
+At that checkpoint authorization helpers required Core's `Principal` type. ADR 0022 now records the
+accepted extraction that supersedes this temporary ownership: `orbit-security` owns validated
+identity/principal models and Core transports an opaque authentication value to the configured
+authorizer.
 Token, policy, JWKS, and revocation expiry comparisons now use exact UTC instants through daylight-
 saving folds. Revocation cleanup is indexed by an expiry heap rather than scanning the entire store.
 Repository workflow policy now also requires explicit token permissions, rejects global write
@@ -218,19 +223,20 @@ wheel on Python 3.11. Each isolated environment passed dependency checks; Ruff, 
 mypy passed on the updated source. This is a per-process implementation, not a distributed quota
 service.
 
-The optional `orbit-prometheus` exporter now rejects metric-family collisions with histogram-
+The optional `orbit-metrics-prometheus` exporter now rejects metric-family collisions with histogram-
 generated sample names and caps each encoded exposition at 8 MiB. The expanded **8-test** suite
 passes against both the source tree and rebuilt wheel; the combined seven-package installed-wheel
 suite then totaled **122 passed**. Ruff, format, and strict mypy checks pass. The cap bounds one scrape
 response; it does not replace deployment-level scrape and cardinality planning.
 
-The optional `orbit-jwt` adapter rejects algorithm allowlists that mix HMAC and asymmetric families,
+The optional `orbit-auth-jwt` adapter rejects algorithm allowlists that mix HMAC and asymmetric families,
 avoiding an unsafe key-family configuration. Its base install keeps cryptography optional: HMAC works
 without that dependency, while configuring RSA, ECDSA, PSS, or EdDSA without the
-`orbit-jwt[asymmetric]` extra fails immediately with an install hint. The **24-test** suite passes,
+`orbit-auth-jwt[asymmetric]` extra fails immediately with an install hint. The **24-test** suite passes,
 including real HS256/RS256 verification; Ruff, format, and strict mypy pass. A clean Python 3.11
 base-wheel install was verified without cryptography, and the asymmetric extra was separately
-installed and smoke-tested. This adapter remains outside Core and depends on Core's token contract.
+installed and smoke-tested. This adapter remains outside Core and now depends directly on
+`orbit-security`'s token contract.
 
 The general HTTP `RateLimitMiddleware` moved from Core to the separately installable
 `orbit-security` package. Core retains its bounded local limiter for built-in Admin protection, but
@@ -295,7 +301,7 @@ raises before entering a synchronous operation, preventing work from starting af
 The sibling `orbit-cache` package now defines a provider-neutral async contract for byte values,
 non-empty string keys, explicit seconds-based TTLs, normalized errors, cancellation propagation,
 and resource shutdown. It has no runtime dependencies and does not depend on Core. The sibling
-`orbit-redis` package implements that contract with redis-py, bounded connection settings, redacted
+`orbit-cache-redis` package implements that contract with redis-py, bounded connection settings, redacted
 configuration/errors, and explicit client cleanup. Its opt-in `RedisCachePlugin` registers the
 capability in the Core container under the published dependency key and closes the client through
 the Core plugin lifecycle. Neither package is bundled into Core; the plugin does not connect to
@@ -406,8 +412,8 @@ verified run and was not repeated for this workflow-only regression.
 
 A follow-up static audit covered the 14 currently checked-out optional package workspaces. Ruff
 lint and format checks pass for every package; strict mypy passes for all 14 after making the
-provider libraries declared by `orbit-jwt` and `orbit-redis` available in the shared disposable
-Python 3.14 environment. This found and fixed one import-order issue in `orbit-prometheus` tests.
+provider libraries declared by `orbit-auth-jwt` and `orbit-cache-redis` available in the shared disposable
+Python 3.14 environment. This found and fixed one import-order issue in `orbit-metrics-prometheus` tests.
 Then all 14 package test suites passed against their current workspace source trees in that
 environment: **246 tests passed**. Core was the installed tox package; optional package imports
 were resolved from local source paths, so this is not a fresh all-wheels origin check. The earlier
@@ -433,8 +439,8 @@ optional identity integrations. Core's architecture guide records that package d
 owned alongside each implementation. These package suites pass locally: 2 cache, 1 metrics, and 3
 security tests.
 OpenAPI generation and the default `/openapi.json` endpoint remain in Core by maintainer decision;
-ADR 0014 records that `orbit-docs`, if created, is optional and may add documentation presentation
-or integrations without replacing Core's route contract. ADR 0015 records the current security
+ADR 0014 records that package documentation belongs alongside package code and that Core retains
+its route schema contract. ADR 0015 records the current security
 boundary: Core retains opt-in Basic Auth, `orbit-security` currently provides optional
 provider-neutral rate-limit policy, and concrete identity integrations remain separate adapters.
 ADR 0016 clarifies that the requested `orbit-sec` basic/professional variants are planned
@@ -481,7 +487,8 @@ evidence that optional sibling implementations are absent from the Core artifact
 Core suite passes **1,036 tests and 2 opt-in host tests skipped** on Python 3.11–3.14; Ruff,
 documentation/link, workflow, scorecard, model-boundary, license, and strict mypy gates pass.
 
-The Admin Basic Auth integration test now uses the documented `Runtime(..., authenticator=...)`
+The Admin Basic Auth integration test now configures both authentication and a `RouteAuthorizer`
+through `Runtime(..., authenticator=..., authorizer=...)`
 composition path instead of constructing `ASGIApplication` directly. It verifies anonymous HTTPS
 access receives the configured challenge and a credential with explicit Admin roles is accepted.
 
@@ -505,7 +512,7 @@ passes **13 tests** on Python 3.11–3.14; Ruff, format, and strict package mypy
 Created clean Python 3.11, 3.12, 3.13, and 3.14 environments, then installed Core and all 14
 checked-out optional packages as editable local projects with every package's own `dev` extra.
 Dependency checks passed in all four environments. The `orbit-gateway`, `orbit-security`, and
-`orbit-prometheus` test suites import the separate `orbit-testing` utility; their manifests now
+`orbit-metrics-prometheus` test suites import the separate `orbit-testing` utility; their manifests now
 declare it only under the `dev` extra, and their READMEs document the local workspace setup. A clean
 install of those extras and their required local capability packages succeeded. This keeps the test
 harness out of runtime dependency sets while making a package's declared development setup complete.
@@ -641,7 +648,7 @@ An AST audit over Core and all 14 checked-out optional package source trees foun
 public async handler: the Prometheus plugin's nested `/metrics` route function. Added a docstring
 describing its runtime snapshot refresh and exposition response. A repeat audit found module
 docstrings and public class/function/async-function docstrings across all 15 source trees, with no
-remaining omissions. `orbit-prometheus` passed Ruff checks and all **8 package tests**. This audit
+remaining omissions. `orbit-metrics-prometheus` passed Ruff checks and all **8 package tests**. This audit
 covers source docstrings; it does not substitute for review of examples, design explanations, or
 API stability.
 
@@ -706,9 +713,9 @@ claim live PostgreSQL migration validation. The local catalog now has 15 optiona
 workspaces; the other catalog entries remain unimplemented until their own contracts and packages
 are built.
 
-## Next database adapter: orbit-mongo (2026-10-05)
+## Next database adapter: orbit-nosql-mongo (2026-10-05)
 
-Created a separate local `orbit-mongo` workspace implementing `orbit_data.Repository` with a typed
+Created a separate local `orbit-nosql-mongo` workspace implementing `orbit_data.Repository` with a typed
 Pydantic model mapping and bounded `_id`-ordered reads. Its `MongoPlugin` lazily provides a
 Core-managed Mongo database resource, validates and redacts the connection URI, checks readiness
 when first resolved, and closes the async client through Core container cleanup. The adapter uses
@@ -739,9 +746,9 @@ README and public API docstrings. The local catalog now has 17 optional package 
 requested catalog packages remain unimplemented. Core's readiness score remains **87/100** and the
 stable-release gate remains open.
 
-## Kafka event transport adapter: orbit-kafka (2026-10-05)
+## Kafka event transport adapter: orbit-events-kafka (2026-10-05)
 
-Added a separate optional `orbit-kafka` package implementing Core's typed `EventTransport` contract.
+Added a separate optional `orbit-events-kafka` package implementing Core's typed `EventTransport` contract.
 It maps event names to prefixed topics, serializes Core event envelopes as JSON, applies a bounded
 encoded-message limit, lazily owns an aiokafka producer, and offers one consumer handler per event
 name. Consumers disable auto-commit and commit only after handler completion; bounded retries leave
@@ -755,9 +762,9 @@ wheel-root/license/typing-marker inspection, and installed-wheel tests pass. Ins
 The local catalog now has 18 optional package workspaces; 25 requested catalog packages remain
 unimplemented. Core's readiness score remains **87/100** and the stable-release gate remains open.
 
-## RabbitMQ event transport adapter: orbit-rabbitmq (2026-10-05)
+## RabbitMQ event transport adapter: orbit-events-rabbitmq (2026-10-05)
 
-Added `orbit-rabbitmq` as a separate optional aio-pika adapter for Core `EventTransport`. It uses a
+Added `orbit-events-rabbitmq` as a separate optional aio-pika adapter for Core `EventTransport`. It uses a
 durable topic exchange, durable per-event queues, publisher confirms, persistent JSON messages, and
 manual acknowledgements after handler success. Bounded in-callback retries reject exhausted
 deliveries without requeue; operators must configure a dead-letter exchange if rejected events need
@@ -770,9 +777,9 @@ documentation checks pass. Wheel/sdist and installed-wheel checks remain pending
 now has 19 optional package workspaces; 24 requested packages remain unimplemented. Core's
 readiness score remains **87/100** and the stable-release gate remains open.
 
-## NATS JetStream event transport adapter: orbit-nats (2026-10-05)
+## NATS JetStream event transport adapter: orbit-events-nats (2026-10-05)
 
-Added `orbit-nats` as a separate optional nats.py adapter for Core's `EventTransport`. It requires an
+Added `orbit-events-nats` as a separate optional nats.py adapter for Core's `EventTransport`. It requires an
 operator-provisioned JetStream stream, maps event names to concrete subjects, uses event IDs as
 JetStream publish message IDs, and waits for JetStream publish acknowledgements. Durable push
 consumers use explicit acknowledgements, bounded client-side pending buffers, bounded server-side
@@ -810,8 +817,8 @@ and the stable-release gate remains open.
 
 Added `orbit-storage` as a standalone capability package with a typed async `ObjectStore` protocol,
 bounded object metadata and listing pagination, opaque key validation, normalized error types, and a
-shared container dependency key for adapters. It has no Core or provider-SDK dependency. `orbit-s3`,
-`orbit-gcs`, and `orbit-azure-storage` remain separate and are not implemented by this work. The
+shared container dependency key for adapters. It has no Core or provider-SDK dependency. `orbit-storage-s3`,
+`orbit-storage-gcs`, and `orbit-storage-azure` remain separate and are not implemented by this work. The
 README documents adapter ownership, lifecycle, and provider-specific consistency, encryption,
 versioning, and conditional-write limits.
 
@@ -821,9 +828,9 @@ closeable streamed downloads, and bounded pagination. Ruff, formatting, strict m
 repositories; 21 of the 41 requested catalog packages remain unimplemented. Core's readiness score
 remains **87/100** and the stable-release gate remains open.
 
-## S3 object storage adapter: orbit-s3 (2026-10-05)
+## S3 object storage adapter: orbit-storage-s3 (2026-10-05)
 
-Added a separate `orbit-s3` adapter for `orbit-storage` using aiobotocore. It lazily owns an async
+Added a separate `orbit-storage-s3` adapter for `orbit-storage` using aiobotocore. It lazily owns an async
 S3 client, follows the SDK credential chain, maps normalized object metadata and ListObjectsV2
 continuation tokens, streams downloads with explicit close behavior, and sends async uploads as
 sequential bounded multipart parts. Failed or cancelled multipart operations attempt an abort;
@@ -856,13 +863,13 @@ passed for 111 source files; documentation/link checks, license-header checks, a
 validation passed. Core readiness remains **87/100**. The four-interpreter Core evidence and the
 earlier 20-package matrix remain recorded above; this latest combined 23-package run was on Python
 3.11 only. Of 41 catalog names, 21 currently have a local implementation package (including the
-two additional `orbit-prometheus` and `orbit-sql-postgres` workspaces), leaving 20 not yet created.
+two additional `orbit-metrics-prometheus` and `orbit-sql-postgres` workspaces), leaving 20 not yet created.
 The single optional security package remains `orbit-security`; Core retains its built-in Basic Auth
 and security baseline. No Basic/Professional security variants were created.
 
-## Google Cloud Storage adapter: orbit-gcs (2026-10-05)
+## Google Cloud Storage adapter: orbit-storage-gcs (2026-10-05)
 
-Created `orbit-gcs` as a separate provider adapter over the existing `orbit-storage` capability.
+Created `orbit-storage-gcs` as a separate provider adapter over the existing `orbit-storage` capability.
 It owns gcloud-aio, optional service-account-file configuration, provider error normalization, and
 an opt-in Core plugin that registers the shared object-store key and closes the SDK client. Byte
 uploads and async streams are accepted; streams are buffered only up to a configurable per-upload
@@ -873,15 +880,15 @@ documents the async stream API and managed client lifecycle ([API reference](htt
 
 Seven fake-client tests pass on Python 3.11. Ruff, formatting, and strict mypy pass. Fresh wheel and
 source distributions build; the wheel includes its Apache license and `py.typed`, and all seven
-tests pass against the installed `orbit-gcs` and `orbit-storage` wheels in the isolated validation
+tests pass against the installed `orbit-storage-gcs` and `orbit-storage` wheels in the isolated validation
 environment. The local workspace now contains 24 optional package repositories. Of the 41
 requested catalog packages, 22 are represented locally (the separate Prometheus and PostgreSQL
 adapter repos are extra to that catalog), leaving 19 not yet implemented. Core remains **87/100**
 on the separate release-readiness scorecard; stable release gates remain open.
 
-## Azure Blob Storage adapter: orbit-azure-storage (2026-10-05)
+## Azure Blob Storage adapter: orbit-storage-azure (2026-10-05)
 
-Created `orbit-azure-storage` as a separate provider adapter over `orbit-storage`. It uses the
+Created `orbit-storage-azure` as a separate provider adapter over `orbit-storage`. It uses the
 Azure async Blob SDK and `DefaultAzureCredential`, keeping Azure identity, endpoint and container
 configuration, and SDK resource cleanup outside Core. Async iterable uploads pass through the
 provider's block-transfer support with configurable block size and bounded transfer concurrency;
@@ -975,3 +982,97 @@ Ruff, format, strict mypy, workflow/scorecard/model-boundary/documentation/licen
 source builds, and package-integrity checks pass locally. These results do not substitute for the
 unavailable hosted checkout or the other external release gates. The independent release-readiness
 score remains **87/100** and its stable-release gate remains open.
+
+## Full local optional-package regression sweep (2026-10-05)
+
+Revalidated all **26** checked-out sibling package workspaces against the current `orbit-core`
+clone in the shared Python 3.11 environment. All **316 package tests passed**. Ruff lint, Ruff
+format checks, and strict mypy also passed for every workspace, including the newer tracing
+adapter. These are local package/source checks and do not substitute for package-specific hosted
+CI or live provider/collector evidence. The Core-hosted CI matrix is still blocked at its second
+checkout because `orbit-projects/orbit-testing` is not available at the configured remote. The
+release-readiness score remains **87/100**; that external gate is still open.
+
+## Ecosystem scope, security packaging, and current local rerun (2026-10-05)
+
+The reusable full-ecosystem objective and package inventory are maintained at the Projects workspace
+root in `ORBIT_ECOSYSTEM_GOAL.md` and `ORBIT_ECOSYSTEM_STATUS.md`. The scope includes Core and
+excludes the unrelated `gabby` project. Of the 42 requested plugins, 35 have implementations and
+seven remain empty repository shells or architecture-deferred. `orbit-metrics-prometheus` and
+`orbit-sql-postgres` are two additional implemented workspaces outside that requested list. Empty
+shells and deferred packages are not represented as implemented or production-ready packages.
+
+Four fresh isolated Python environments installed all 37 implemented source plugin checkouts and
+their declared development extras. Their test suites passed **571 tests per interpreter** on Python
+3.11–3.14; Ruff lint, formatting, and strict mypy passed for all 37. `pip check` passed in each interpreter
+environment. Core passed **1,042 tests** on Python 3.11–3.14 with the two opt-in process-host tests
+skipped in each default run; the opt-in host suite passed **2/2 Uvicorn/Gunicorn tests per
+interpreter**. Core Ruff lint, formatting, strict mypy, docs validation, scorecard validation, and a
+combined local `pip check` passed. These local runs use deterministic fakes and do
+not establish hosted CI, live provider behavior, or deployment readiness.
+
+At this historical checkpoint the selected security topology was one `orbit-security` distribution
+with an implemented `basic` install alias and a planned `professional` extra. Basic Auth, bearer/token
+validation and revocation, and JWKS contracts had moved to `orbit-security`; principal/context and
+route policy were still in Core. ADR 0022 and the latest ecosystem status record the later identity
+and principal extraction. Core Admin callers and limiter remain to be extracted. The `professional`
+feature/dependency set is not implemented and must not be advertised. `orbit-auth-rbac` now has an
+immutable exact role-to-permission evaluator over trusted
+structural subjects. It has no runtime Core dependency, defaults to deny, and bounds grants and
+subjects at authorization time. Its 13 tests pass on Python 3.11–3.14; strict mypy and standalone
+wheel/sdist checks pass. `orbit-migrations` now checks the persisted
+history row count before loading it and rejects oversized or duplicate version records; its eight
+tests pass on Python 3.11–3.14. ADR 0018 supersedes
+ADR 0017 on this packaging detail. Core's independent score remains **87/100** and its stable gate
+remains open; this score does not represent the full ecosystem.
+
+## Current Core validation after OAuth token repr hardening (2026-10-05)
+
+The current Core source passed **1,042 tests** on Python 3.11, 3.12, 3.13, and 3.14; each default
+run skipped the two opt-in host-process tests. Coverage was 91.70%, 91.72%, 91.72%, and 91.71%,
+respectively. Ruff, format, strict mypy, documentation, workflow, scorecard, and model-boundary
+checks passed. `OAuthTokenResponse` now redacts access tokens, refresh tokens, and provider extras in
+`repr` and `str`; direct regression assertions cover those diagnostics. The separate Core readiness
+score remains **87/100**. The hosted CI checkout and reviewer approval gates remain external.
+
+## Ecosystem architecture checkpoint (2026-10-05)
+
+At this checkpoint ADR 0022 recorded the accepted direction: Core removed SQLite and Basic Auth, but
+still had bearer/token/policy/principal/rate-limit implementations and Admin callers. Later work
+moved bearer/token/policy and identity/principal code to `orbit-security`; the Core Admin limiter and
+callers remain. The Python Admin package now exists in `orbit-admin`. See the latest
+`ORBIT_ECOSYSTEM_STATUS.md` for the current boundary and validation evidence. The Core scope gate is
+open; its separately scored status remains **80/100**.
+
+After installing Core's declared `dev`, `server`, and `process-plugins` extras without a sibling
+checkout, Core passed **1,015 tests** with **2 hosting tests skipped** on Python 3.11–3.14, with
+90.98–91.03% coverage. The real-host process suite passed **2/2 tests** on each version. These
+results earn the supported-version scorecard points; hosted CI remains external.
+
+Database layering checkpoints on Python 3.11: `orbit-data` 1, `orbit-nosql` 1, `orbit-sql` 13,
+`orbit-sql-sqlite` 21, `orbit-sql-mysql` 10, `orbit-sql-postgres` 22, and `orbit-nosql-mongo` 5 tests
+passed. `orbit-security` passed 12 tests. Provider tests use deterministic fakes; live database,
+identity-provider, deployment, hosted CI and release evidence remain external gates. The ecosystem
+scorecard now includes the three additional database packages and reports **59/100** overall, with
+Core's score reported separately.
+
+## Core CI dependency correction (2026-10-05)
+
+Core's CI and release workflows no longer check out or install the separate `orbit-testing`
+repository. Core integration tests use a private bounded ASGI harness under `tests/helpers`, which
+avoids a Core → test-utility → Core development dependency loop and lets hosted jobs start from the
+Core checkout alone. The public `orbit-testing` package remains optional for downstream plugin and
+application tests. ADR 0024 records the boundary. The focused regression set passed **87 tests** on
+Python 3.11 after the change. The exact current Core suite then passed **1,015 tests** on Python
+3.11–3.14 with 90.98–91.03% coverage, and the real Uvicorn/Gunicorn process tests passed **2/2 per
+interpreter**. Ruff, format, strict mypy, workflow, scorecard, model-boundary, documentation,
+license, lock, wheel/sdist build, and package-integrity checks passed locally. Hosted workflow
+execution and reviewer approval remain external gates.
+
+## Current Core boundary validation on Python 3.11–3.14 (2026-10-06)
+
+After extracting the Admin API boundary, the current Core tree passed **845 default tests on each
+supported interpreter** (Python 3.11, 3.12, 3.13, and 3.14); each default run skipped the two
+explicitly gated hosting tests. The real Uvicorn/Gunicorn worker-host tests then passed **2/2 on each
+interpreter**. The Core release-readiness score remains **87/100**. Hosted CI, release provenance,
+maintainer approval, and target deployment validation remain open external gates.

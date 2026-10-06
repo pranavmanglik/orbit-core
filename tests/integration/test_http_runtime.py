@@ -17,7 +17,6 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
-from orbit_testing import TestClient
 from pydantic import BaseModel, SecretStr
 
 from orbit import Application, ApplicationConfig, Service, ServiceDescriptor
@@ -26,8 +25,8 @@ from orbit.asgi.request import Headers, HTTPError, Request
 from orbit.container import Scope
 from orbit.diagnostics import InMemoryTracer
 from orbit.health import HealthReport, HealthStatus
-from orbit.security import Identity, Principal
-from orbit.security.context import current_principal
+from tests.helpers.asgi_client import TestClient
+from tests.helpers.auth_value import AuthTestIdentity, AuthTestPrincipal
 
 
 def compose(**config):
@@ -463,74 +462,15 @@ class Auth:
             "Bearer writer": {"orbit.admin.read", "orbit.admin.write"},
         }.get(token)
         return (
-            Principal(identity=Identity(subject="test", provider="test"), roles=roles)
+            AuthTestPrincipal(
+                identity=AuthTestIdentity(subject="test", provider="test"), roles=frozenset(roles)
+            )
             if roles
             else None
         )
 
 
-@pytest.mark.parametrize(
-    "token,path,status",
-    [
-        ("", "/admin", 401),
-        ("Bearer reader", "/admin", 200),
-        ("Bearer reader", "/admin/config", 200),
-        ("Bearer reader", "/admin/missing", 404),
-        ("Bearer reader", "/admin/services", 200),
-        ("Bearer reader", "/admin/plugins", 200),
-        ("Bearer reader", "/admin/routes", 200),
-        ("Bearer reader", "/admin/dependencies", 200),
-        ("Bearer reader", "/admin/events", 200),
-        ("Bearer reader", "/admin/audit", 200),
-        ("Bearer reader", "/admin/state", 200),
-    ],
-)
-async def test_admin_requires_auth_and_serves_actual_core_views(token, path, status):
-    app, _ = compose(admin_enabled=True)
-    asgi = ASGIApplication(app, authenticator=Auth())
-    async with TestClient(asgi) as client:
-        result = await client.request("GET", path, headers={"authorization": token})
-        assert result.status == status
-        if status == 200:
-            assert result.headers["cache-control"] == "no-store"
-    assert current_principal() is None
-
-
-@pytest.mark.parametrize(
-    "token,origin,status",
-    [
-        ("Bearer reader", "", 403),
-        ("Bearer writer", "https://evil.example", 403),
-        ("Bearer writer", "", 200),
-    ],
-)
-async def test_admin_mutation_requires_write_role_and_explicit_authority(token, origin, status):
-    app, _ = compose(admin_enabled=True)
-    asgi = ASGIApplication(app, authenticator=Auth())
-    headers = {"authorization": token}
-    if origin:
-        headers["origin"] = origin
-    async with TestClient(asgi) as client:
-        response = await client.request("POST", "/admin/health/refresh", headers=headers)
-        assert response.status == status
-        if status == 200:
-            audit = await client.request("GET", "/admin/audit", headers=headers)
-            assert audit.status == 200
-            assert audit.json()[-1]["action"] == "health.refresh"
-
-
-async def test_admin_rate_limit_returns_retry_after():
-    app, _ = compose(admin_enabled=True, admin_rate_limit=1, admin_rate_period=60)
-    asgi = ASGIApplication(app, authenticator=Auth())
-    headers = {"authorization": "Bearer reader"}
-    async with TestClient(asgi) as client:
-        assert (await client.request("GET", "/admin", headers=headers)).status == 200
-        limited = await client.request("GET", "/admin", headers=headers)
-    assert limited.status == 429
-    assert "retry-after" in limited.headers
-
-
-async def test_admin_disabled_and_protected_user_route():
+async def test_admin_package_is_opt_in_and_protected_user_route():
     app, asgi = compose()
 
     @app.router.route("/private", name="private", roles=frozenset({"private"}))
@@ -540,6 +480,26 @@ async def test_admin_disabled_and_protected_user_route():
     async with TestClient(asgi) as client:
         assert (await client.request("GET", "/admin")).status == 404
         assert (await client.request("GET", "/private")).status == 401
+
+
+async def test_authenticated_route_fails_closed_without_authorizer():
+    app, _ = compose()
+
+    @app.router.route("/private", name="private", roles=frozenset({"private"}))
+    async def private(request):
+        return Response.text("private")
+
+    class Auth:
+        async def authenticate(self, request):
+            return AuthTestPrincipal(
+                identity=AuthTestIdentity(subject="user", provider="test"),
+                roles=frozenset({"private"}),
+            )
+
+    async with TestClient(ASGIApplication(app, authenticator=Auth())) as client:
+        response = await client.request("GET", "/private")
+    assert response.status == 403
+    assert b"private" not in response.body
 
 
 async def test_internal_error_never_leaks_exception_details():

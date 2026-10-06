@@ -39,8 +39,8 @@ application.tasks.register(
 ```
 
 Task failures are isolated from unrelated services, retained as bounded metadata in
-`application.tasks.history`, emitted as `orbit.task.failed`, and exposed at the
-authenticated `/admin/tasks` inspection endpoint.
+`application.tasks.history` and emitted as `orbit.task.failed`. The optional `orbit-admin` package
+exposes task state at an authenticated `/admin/tasks` endpoint.
 
 `TaskFailure` and `TaskInfo` are validated immutable snapshots. Names, attempt counters,
 exception-type identifiers, lifecycle states and elapsed timing are checked at construction, so
@@ -62,7 +62,7 @@ for readiness while they are running or within their configured restart budget.
 
 While the application is running, operators can explicitly restart a task through
 `await application.restart_task("poller")` or the authenticated `POST
-/admin/tasks/poller/restart` operation. The supervisor joins the old task before creating its
+/admin/tasks/poller/restart` operation when `orbit-admin` is installed. The supervisor joins the old task before creating its
 replacement and retains the prior failure history for diagnostics. The intentional cancellation
 does not create a synthetic `CancelledError` failure or invoke the failure observer. The join is
 bounded by the supervisor shutdown timeout; a task that suppresses cancellation is marked failed

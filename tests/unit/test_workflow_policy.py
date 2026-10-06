@@ -165,8 +165,8 @@ def test_workflow_checker_rejects_inline_workflow_level_write_permission(tmp_pat
     assert any("workflow-level write permissions" in error for error in errors)
 
 
-def test_ci_workflow_requires_the_sibling_orbit_testing_checkout(tmp_path: Path) -> None:
-    """Keep the dev-only test package resolvable in hosted CI."""
+def test_core_workflows_reject_the_sibling_orbit_testing_checkout(tmp_path: Path) -> None:
+    """Keep Core test and release workflows independent of a downstream test package."""
     workflow = tmp_path / "ci.yml"
     workflow.write_text(
         "\n".join(
@@ -181,6 +181,8 @@ def test_ci_workflow_requires_the_sibling_orbit_testing_checkout(tmp_path: Path)
                 "      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v4",
                 "        with:",
                 "          persist-credentials: false",
+                "          repository: orbit-projects/orbit-testing",
+                "          path: orbit-testing",
                 "      - run: pytest",
                 "      - uses: actions/upload-artifact@"
                 "0123456789abcdef0123456789abcdef01234567 # v4",
@@ -193,7 +195,7 @@ def test_ci_workflow_requires_the_sibling_orbit_testing_checkout(tmp_path: Path)
     )
 
     errors = _checker_module().errors_for(workflow)
-    assert any("orbit-projects/orbit-testing" in error for error in errors)
+    assert any("must not depend" in error for error in errors)
 
 
 def test_workflow_checker_requires_release_signing_and_complete_inputs(tmp_path: Path) -> None:

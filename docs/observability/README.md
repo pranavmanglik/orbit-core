@@ -28,7 +28,7 @@ serialized.
 Request diagnostics automatically publish `orbit_http_requests_total` and
 `orbit_http_request_duration_seconds`. Core does not ship an exporter or network endpoint;
 separately installed adapters own exposition, transport, batching, retention and backpressure.
-The `orbit-prometheus` adapter adds a `/metrics` route to an application when explicitly
+The `orbit-metrics-prometheus` adapter adds a `/metrics` route to an application when explicitly
 registered. Protect it with route roles and deployment network policy when the output is not
 intended to be public.
 

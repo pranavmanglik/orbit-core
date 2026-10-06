@@ -18,6 +18,11 @@ invalid method types and unsupported methods fail as routing contract errors bef
 Direct dispatch also applies the 16 KiB UTF-8 path bound, so programmatic callers cannot bypass the
 ASGI request limit with an oversized or non-encodable path.
 
+Core indexes route patterns in a static-first segment trie. Dispatch explores matching static and
+parameter branches instead of scanning every registered route; route names, identifiers, and
+method/template duplicates use dedicated indexes during composition. The ordered route list remains
+available for inspection and OpenAPI generation.
+
 A missing path produces `routing.route-not-found`. A known path with a disallowed method produces
 `routing.method-not-allowed` and an `Allow` value. This distinction is stable for clients and
 observability. Route matching does not perform a second percent-decoding pass; malformed escapes,
@@ -36,7 +41,10 @@ metadata also rejects non-UTF-8 text and implicit coercion of route names or rol
 can reach OpenAPI generation or dispatch. Role collections are normalized to immutable sets when a
 group is created or extended, so malformed nested-group inputs fail during composition rather than
 later while routes are being combined.
-Plugins should use a group to make ownership and authorization boundaries visible in inspection.
+Plugins should use a group to make ownership and route-requirement boundaries visible in inspection.
+Core stores role labels as metadata but does not evaluate them. If a route declares roles, the ASGI
+runtime delegates them to the configured `RouteAuthorizer`; without one the request is denied. The
+`orbit-security` package supplies `RoleAuthorizer` and policy implementations.
 
 ## Validation and OpenAPI
 

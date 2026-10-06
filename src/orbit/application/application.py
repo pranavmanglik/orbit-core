@@ -35,7 +35,6 @@ from pydantic import BaseModel
 
 from orbit._limits import _MAX_CORE_CAPACITY
 from orbit.admin.contracts import AdminContribution
-from orbit.admin.models import AdminAuditRecord
 from orbit.config import ApplicationConfig, Config
 from orbit.config.contracts import ConfigurationWatcher
 from orbit.container import Container, ProviderResolution
@@ -51,8 +50,6 @@ from orbit.plugins import PluginRegistry
 from orbit.plugins.contracts import PluginContract
 from orbit.routing import Router
 from orbit.runtime.tasks import TaskFailure, TaskSupervisor
-from orbit.security import PolicyEngine, RateLimiter
-from orbit.security.context import current_principal
 from orbit.services import ServiceRegistry
 from orbit.services.contracts import ServiceContract
 from orbit.services.models import ServiceDescriptor
@@ -79,8 +76,6 @@ class Application:
         self.diagnostics = Diagnostics()
         self._health_service = HealthService()
         self.container.observe(self._record_provider_resolution)
-        self.policies = PolicyEngine()
-        self.admin_rate_limiter = RateLimiter(config.admin_rate_limit, config.admin_rate_period)
         self.tasks = TaskSupervisor(
             shutdown_timeout=config.lifecycle_timeout,
             observer=self._record_task_failure,
@@ -99,14 +94,12 @@ class Application:
         self._service_health: dict[str, HealthStatus] = {}
         self._health_history: deque[HealthReport] = deque(maxlen=100)
         self._health_task: asyncio.Task[HealthReport] | None = None
-        self._admin_audit: deque[AdminAuditRecord] = deque(maxlen=1000)
         self._lock = asyncio.Lock()
         self._cleaned = False
         self.container.register_instance(Application, self)
         self.container.register_instance(ApplicationConfig, config)
         self.container.register_instance(Container, self.container)
         self.container.register_instance(EventBus, self.events)
-        self.container.register_instance(PolicyEngine, self.policies)
         self.lifecycle.observe(self._reflect_lifecycle)
 
     @property
@@ -128,33 +121,6 @@ class Application:
     def health_history(self) -> tuple[HealthReport, ...]:
         """Return bounded health reports in chronological order."""
         return tuple(report.model_copy(deep=True) for report in self._health_history)
-
-    @property
-    def admin_audit(self) -> tuple[AdminAuditRecord, ...]:
-        """Return bounded administrative audit records without credentials or payloads."""
-        return tuple(record.model_copy(deep=True) for record in self._admin_audit)
-
-    def record_admin_audit(
-        self,
-        action: str,
-        *,
-        target: str = "",
-        success: bool,
-        error_code: str | None = None,
-    ) -> None:
-        """Record an operation using only the current principal's stable identity."""
-        principal = current_principal()
-        identity = principal.identity if principal is not None else None
-        self._admin_audit.append(
-            AdminAuditRecord(
-                action=action,
-                target=target,
-                subject=identity.subject if identity is not None else "anonymous",
-                provider=identity.provider if identity is not None else "",
-                success=success,
-                error_code=error_code,
-            )
-        )
 
     def register(self, service: ServiceContract) -> None:
         """Register a service during composition."""
@@ -247,9 +213,8 @@ class Application:
             if route.metadata.path in {
                 "/health/live",
                 "/health/ready",
-                "/admin",
                 "/openapi.json",
-            } or (route.metadata.path.startswith("/admin/")):
+            }:
                 raise ValueError("This path is reserved for a Core-owned endpoint.")
             if route.metadata.service_id is not None and route.metadata.service_id not in ids:
                 raise ValueError(f"Route {route.metadata.name} belongs to an unknown service.")
@@ -276,6 +241,20 @@ class Application:
     def admin_contributions(self) -> Mapping[str, AdminContribution]:
         """Read the immutable administrative contribution registry."""
         return MappingProxyType(self._admin_contributions)
+
+    async def inspect_admin_contribution(self, name: str) -> BaseModel | None:
+        """Inspect one registered admin extension within Core's configured health deadline.
+
+        The bounded, cancellation-aware inspection behavior is a stable extension contract used
+        by optional Admin packages. The HTTP routes and presentation remain outside Core.
+        """
+        if not isinstance(name, str) or name not in self._admin_contributions:
+            raise KeyError(name)
+        return await self._inspect_admin_contribution(
+            name,
+            self._admin_contributions[name],
+            self.config.application.health_timeout,
+        )
 
     async def _inspect_admin_contribution(
         self,
@@ -378,7 +357,6 @@ class Application:
             self.container.freeze()
             self.config.freeze()
             self.router.freeze()
-            self.policies.freeze()
             for child in self._children.values():
                 await child.configure()
             for service in self.services.ordered():

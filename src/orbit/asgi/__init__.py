@@ -17,7 +17,8 @@ The package implements the protocol boundary required by the orchestrator withou
 third-party web framework. Provider integrations and business features remain plugin-owned.
 """
 
-from orbit.asgi.application import ASGIApplication
+from typing import Any
+
 from orbit.asgi.middleware import Middleware, NextHandler
 from orbit.asgi.request import (
     MAX_BODY_BYTES,
@@ -48,3 +49,12 @@ __all__ = [
     "Scope",
     "Send",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Load the ASGI application lazily to keep routing contracts import-cycle free."""
+    if name == "ASGIApplication":
+        from orbit.asgi.application import ASGIApplication
+
+        return ASGIApplication
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

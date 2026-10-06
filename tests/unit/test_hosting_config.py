@@ -93,6 +93,8 @@ def test_runtime_and_asgi_boundaries_reject_invalid_constructor_objects() -> Non
         ASGIApplication(app, router=object())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Authenticator"):
         ASGIApplication(app, authenticator=object())  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="RouteAuthorizer"):
+        ASGIApplication(app, authorizer=object())  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Tracer"):
         ASGIApplication(app, tracer=object())  # type: ignore[arg-type]
 

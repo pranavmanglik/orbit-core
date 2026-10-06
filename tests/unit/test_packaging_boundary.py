@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 import subprocess
 import sys
@@ -28,28 +29,31 @@ _OPTIONAL_ORBIT_PACKAGES = {
     "orbit-data",
     "orbit-sql",
     "orbit-sql-postgres",
-    "orbit-mongo",
-    "orbit-redis",
+    "orbit-nosql-mongo",
+    "orbit-cache-redis",
     "orbit-vector",
     "orbit-migrations",
     "orbit-events",
-    "orbit-kafka",
-    "orbit-rabbitmq",
-    "orbit-nats",
+    "orbit-events-kafka",
+    "orbit-events-rabbitmq",
+    "orbit-events-nats",
     "orbit-streams",
     "orbit-cloud",
+    "orbit-cloud-aws",
+    "orbit-cloud-gcp",
+    "orbit-cloud-azure",
     "orbit-kubernetes",
     "orbit-discovery",
     "orbit-gateway",
     "orbit-config-server",
     "orbit-security",
-    "orbit-oauth2",
-    "orbit-jwt",
-    "orbit-rbac",
+    "orbit-auth-oauth2",
+    "orbit-auth-jwt",
+    "orbit-auth-rbac",
     "orbit-observability",
     "orbit-logging",
     "orbit-metrics",
-    "orbit-prometheus",
+    "orbit-metrics-prometheus",
     "orbit-tracing",
     "orbit-health",
     "orbit-cache",
@@ -58,12 +62,11 @@ _OPTIONAL_ORBIT_PACKAGES = {
     "orbit-resilience",
     "orbit-lock",
     "orbit-storage",
-    "orbit-s3",
-    "orbit-gcs",
-    "orbit-azure-storage",
+    "orbit-storage-s3",
+    "orbit-storage-gcs",
+    "orbit-storage-azure",
     "orbit-testing",
     "orbit-devtools",
-    "orbit-docs",
     "orbit-graphql",
     "orbit-realtime",
     "orbit-email",
@@ -72,6 +75,11 @@ _OPTIONAL_ORBIT_PACKAGES = {
     "orbit-admin",
 }
 _WEB_FRAMEWORK_DISTRIBUTIONS = {"fastapi", "litestar", "starlette"}
+_PROCESS_HOST_IMPORTS = {
+    Path("src/orbit/plugins/process.py"): {"grpc", "google"},
+    Path("src/orbit/plugins/v1/process_plugin_pb2.py"): {"google"},
+    Path("src/orbit/plugins/v1/process_plugin_pb2_grpc.py"): {"grpc"},
+}
 _PROVIDER_IMPORT_ROOTS = {
     "aioboto3",
     "aiobotocore",
@@ -233,8 +241,26 @@ def test_core_sources_do_not_import_provider_sdks() -> None:
                 (str(source.relative_to(_ROOT)), module)
                 for module in imported
                 if module in _PROVIDER_IMPORT_ROOTS
+                and module not in _PROCESS_HOST_IMPORTS.get(source.relative_to(_ROOT), set())
             )
 
     assert not violations, (
         f"Provider SDK and web-framework imports must remain outside Core: {violations}"
+    )
+
+
+def test_base_core_import_does_not_load_optional_process_plugin_dependencies() -> None:
+    """Installing Core without the process extra keeps gRPC out of ordinary startup imports."""
+    code = (
+        "import sys; import orbit; "
+        "assert 'grpc' not in sys.modules; "
+        "assert 'google.protobuf' not in sys.modules"
+    )
+    subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=_ROOT,
+        env={**os.environ, "PYTHONPATH": str(_ROOT / "src")},
+        check=True,
+        capture_output=True,
+        text=True,
     )

@@ -18,7 +18,6 @@ from orbit.errors.error import ErrorResponse, OrbitProblem
 from orbit.errors.exceptions import (
     ConfigurationError,
     ContainerError,
-    DatabaseError,
     LifecycleError,
     OrbitError,
     PluginError,
@@ -31,7 +30,6 @@ __all__ = [
     "ErrorResponse",
     "ConfigurationError",
     "ContainerError",
-    "DatabaseError",
     "ErrorCategory",
     "ErrorSeverity",
     "LifecycleError",

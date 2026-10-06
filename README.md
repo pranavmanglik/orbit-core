@@ -6,21 +6,20 @@ inspection. It deliberately does not own databases, brokers, identity providers,
 telemetry vendors. Those capabilities are installed as plugins and adapters against Core contracts.
 
 The project's complete architectural direction is recorded in the [project charter](docs/architecture/project-charter.md).
-Orbit Core is one foundational framework unit with three related surfaces: the web runtime, the
-first-class Admin surface, and the operator CLI. Core's opt-in Admin surface is a protected HTML
-overview plus typed inspection and operational endpoints; it is not a general business-data CRUD or
-analytics dashboard. That richer `orbit-admin` capability is planned as a separately installed
-package and is not implemented in the current workspaces. Orbit owns a small provider-neutral ASGI
+Orbit Core provides the web runtime and operator CLI. Admin routes, CRUD, audit storage, and the
+TypeScript dashboard belong to the separately installed `orbit-admin` repository, whose Python
+package depends directly on Core, Security, Data, and SQL capability contracts. Admin is not
+activated by Core configuration. The Admin package is pre-alpha and still has open durability and
+live-provider release gates. Orbit owns a small provider-neutral ASGI
 and routing boundary. Development uses Uvicorn directly; production uses Gunicorn with the Uvicorn worker.
 The [native ASGI decision](docs/architecture/adr/0005-native-asgi-boundary.md) records why Core
 owns this boundary rather than depending on another web framework.
 
 Optional capability packages and provider adapters are separate distributions and repositories:
 they are not bundled into the `orbit-core` package, installed as its dependencies, or activated
-implicitly. Install only the packages an application chooses to use. Deliberate Core baselines are
-limited to universal orchestration/security contracts and small built-in behavior such as
-stdlib-backed SQLite and explicitly enabled static-user Basic Auth; provider integrations and
-advanced security remain optional packages.
+implicitly. Install only the packages an application chooses to use. Core contains orchestration,
+generic runtime behavior, and stable extension contracts. Database and security capabilities,
+including SQLite and Basic Auth, are separately installed packages.
 
 This boundary is the central design constraint: Core coordinates a capability, while a plugin owns
 the provider-specific implementation. A deployment can therefore replace a provider without
@@ -28,16 +27,17 @@ changing application lifecycle or business code.
 
 ## Development
 
-Python 3.11–3.14 is supported by the configured CI matrix. Core tests use the separately maintained
-`orbit-testing` package. Check out that repository as a sibling at `../orbit-testing` before syncing
-the development environment; the locked dev dependency resolves from that local path. It is not a
-runtime dependency of `orbit-core`.
+Python 3.11–3.14 is supported by the configured CI matrix. Core's own integration tests use a
+private ASGI harness under `tests/helpers`, so the Core test and release workflows have no
+cross-repository test dependency. Plugin authors can install the separately maintained
+`orbit-testing` package for reusable ASGI contract tests; it is not a runtime dependency of
+`orbit-core`.
 
 Then create the environment from the committed lockfile:
 
 ```bash
 python -m pip install uv==0.12.13
-uv sync --frozen --extra dev --extra development-server
+uv sync --frozen --extra dev --extra development-server --extra process-plugins
 uv lock --check
 uv run --no-sync pytest --cov=orbit
 uv run --no-sync ruff check src tests scripts examples
@@ -77,9 +77,10 @@ Gunicorn and `uvicorn-worker` for supervised multi-worker hosting.
 - Requests have body, time and concurrency limits. Streaming retains its dependency scope.
   Overload responses and interrupted requests are included in operational diagnostics.
 - Health probes share concurrent work, and component health is reflected in application state.
-- Admin access is disabled by default and requires an authenticator and explicit roles.
-  Configuration secrets represented by Pydantic secret types are masked in inspection.
-- The CLI and admin endpoints inspect the same Core composition and state.
+- Protected application routes require an authenticator and a configured `RouteAuthorizer`, such as
+  `orbit-auth`'s `RoleAuthorizer`. Configuration secrets represented by Pydantic secret types
+  are masked in inspection.
+- The CLI inspects Core composition and state. Install `orbit-admin` for operator routes.
 
 These are orchestration guarantees, not a claim that an in-memory reference backend is durable or
 that a deployment has been load-tested. Production behavior comes from the selected plugins,
@@ -88,16 +89,31 @@ their provider contracts, and the host's deployment evidence.
 ## Plugin boundary
 
 Plugins register services, routes, providers, configuration, health checks, event handlers, and
-admin views during composition. Core validates plugin identity, API compatibility, dependencies,
+stable extension contributions during composition. Core validates plugin identity, API compatibility, dependencies,
 capabilities, enablement, and cleanup before the application enters its serving phase. See the
 [plugin contract](docs/concepts/plugins.md) before implementing an integration.
 
+Python plugins remain in-process. For trusted local plugins implemented in another language,
+install the optional `process-plugins` extra to supervise a gRPC/Protocol Buffers process plugin.
+The host supports bounded lifecycle, health, and typed capability calls; it is not a sandbox. A
+separate Go Kubernetes provider and Rust stream SDK exercise the host through typed capability
+contracts. Broader cross-language conformance, performance benchmarks, and TypeScript process support
+remain in progress. See the
+[process plugin contract](docs/concepts/plugins.md#plugins-and-adapters) and
+[host decision](docs/architecture/adr/0020-local-grpc-process-plugin-host.md).
+
 `orbit-core` does not bundle optional packages. Current local workspaces include `orbit-data`,
-`orbit-cache`, `orbit-redis`, `orbit-sql`, `orbit-sql-postgres`, `orbit-jwt`, `orbit-security`,
-`orbit-testing`, `orbit-metrics`, `orbit-prometheus`, `orbit-resilience`, `orbit-logging`,
-`orbit-devtools`, `orbit-gateway`, `orbit-kafka`, `orbit-migrations`, `orbit-mongo`,
-`orbit-nats`, `orbit-rabbitmq`, and `orbit-vector`. They are installed separately and remain
-pre-alpha; this is not a claim that the wider plugin catalog is implemented. See
+`orbit-sql`, `orbit-nosql`, `orbit-sql-sqlite`, `orbit-sql-mysql`, `orbit-nosql-mongo`, `orbit-cache-redis`, `orbit-vector`, `orbit-migrations`, `orbit-cloud`, `orbit-events`,
+`orbit-events-kafka`, `orbit-events-rabbitmq`, `orbit-events-nats`, `orbit-gateway`, `orbit-auth`, `orbit-security`, `orbit-auth-oauth2`,
+`orbit-auth-jwt`, `orbit-auth-rbac`, `orbit-logging`, `orbit-metrics`, `orbit-tracing`, `orbit-cache`,
+`orbit-resilience`, `orbit-lock`, `orbit-storage`, `orbit-storage-s3`, `orbit-storage-gcs`, `orbit-storage-azure`, `orbit-testing`,
+`orbit-devtools`, `orbit-metrics-prometheus`, `orbit-sql-postgres`, `orbit-scheduler`, `orbit-discovery`,
+`orbit-discovery-go`,
+`orbit-cloud-aws`, `orbit-cloud-gcp`, `orbit-cloud-azure`, `orbit-kubernetes`, `orbit-kubernetes-go`, `orbit-workers`, `orbit-realtime`, `orbit-webrtc`, `orbit-webrtc-go`, `orbit-sockets`, `orbit-sockets-go`, `orbit-sockets-rust`, `orbit-email`,
+`orbit-notifications`, `orbit-search`, `orbit-streams`, `orbit-streams-rust`, `orbit-config-server`, `orbit-graphql`,
+`orbit-observability`, `orbit-admin`, `orbit-search-elasticsearch`, and `orbit-search-opensearch`. They are installed separately and remain
+pre-alpha. The three cloud adapters implement read-only inventory APIs with fake-client coverage;
+live provider compatibility and release readiness remain open. See
 [Core and plugin ownership](docs/architecture/core-and-plugin-ownership.md)
 for the explicit Core exceptions and package status.
 

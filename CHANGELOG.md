@@ -17,10 +17,10 @@ All notable changes to this project are documented in this file.
   optional HTTP policies.
 - Core security now includes an opt-in static-user Basic Auth baseline with salted PBKDF2 password
   hashes, HTTPS-required-by-default verification, bounded worker concurrency, and RFC challenge
-  headers. JWT signature verification moved to the separately installable `orbit-jwt` repository;
+  headers. JWT signature verification moved to the separately installable `orbit-auth-jwt` repository;
   Core keeps `TokenVerifier` and token policy contracts without depending on PyJWT.
 - Prometheus exposition and `/metrics` routing moved out of Core into the `orbit-metrics` capability
-  and `orbit-prometheus` adapter repositories. Core retains bounded metric instruments and immutable
+  and `orbit-metrics-prometheus` adapter repositories. Core retains bounded metric instruments and immutable
   snapshots, but does not reserve a scrape path or impose Prometheus-specific histogram labels.
 - Application-level retry, deadlines, circuit breakers, failure classifiers, and bulkheads moved to
   the separately installable `orbit-resilience` repository. Core still owns its lifecycle, request,

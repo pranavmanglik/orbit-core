@@ -1,147 +1,63 @@
 # Plugins and adapters
 
-Plugins extend the orchestrator without moving provider knowledge into Core. Orbit's ecosystem may
-use a layered arrangement: Core provides stable foundation contracts; a capability or adapter layer
-offers a consistent user-facing API; and provider-specific plugins implement that layer for a
-particular technology. A capability can also be supplied directly by one plugin when an additional
-layer does not add useful consistency or reuse.
-
-Optional packages are installed only when an application needs them; they are not dependencies
-bundled into `orbit-core`. The intended optional layers are:
+Plugins extend the orchestrator without moving provider knowledge into Core. Orbit uses a layered
+arrangement: Core provides lifecycle and resource ownership; capability packages define uniform
+user-facing contracts; provider packages implement those contracts using vendor SDKs and settings.
+Install only capabilities and providers an application uses.
 
 ```text
-application
-├── orbit-core (orchestration and shared contracts)
-├── orbit-data (repository / Unit-of-Work capability)
-└── orbit-sql (SQL capability over Core's SQLDatabase contract)
-    └── orbit-sql-postgres (optional PostgreSQL adapter)
-        └── asyncpg (provider driver)
+Core (orchestration, lifecycle, DI, generic extension contracts)
+├── orbit-data (common database-neutral repository contracts)
+│   ├── orbit-sql (SQL types, repositories, transactions, adapter contract)
+│   │   ├── orbit-sql-sqlite (SQLite)
+│   │   ├── orbit-sql-mysql (MySQL)
+│   │   └── orbit-sql-postgres (PostgreSQL)
+│   └── orbit-nosql (NoSQL resource/repository capability)
+│       └── orbit-nosql-mongo (MongoDB provider adapter)
+├── orbit-auth (authentication, authorization, identity, and protocol contracts)
+│   ├── orbit-auth-jwt (PyJWT verifier)
+│   ├── orbit-auth-oauth2 (OAuth2/OIDC flow)
+│   └── orbit-auth-rbac (role-to-permission evaluator)
+├── orbit-security (cross-cutting security controls such as HTTP rate limiting)
+└── other capability and provider packages
 ```
 
-The provider adapter implements the capability's adapter contract and Core's SQL contract; the
-capability package depends on its declared contracts rather than Core discovering providers.
-These packages are separately installed, and an application can omit any capability it does not
-use.
+`orbit-data` is shared by SQL and NoSQL repository implementations. `orbit-sql` and `orbit-nosql`
+define family-specific behavior; neither selects or imports a provider. Provider adapters own
+drivers, connection settings, credentials, transport, resource cleanup and provider-specific error
+mapping. SQL and NoSQL systems do not imply identical transaction, query, consistency or indexing
+behavior. Redis remains a cache provider through `orbit-cache`; it may implement `orbit-nosql` only
+where the data contract is semantically correct for Redis.
 
-The current local database workspaces demonstrate the approved three-layer arrangement:
+The target boundary keeps authentication, database, and Admin implementations out of Core. SQLite
+and authentication implementations now live in their capability/provider packages. Core retains an
+opaque request-authentication context, route-authorizer and Admin-contribution contracts, and bounded
+route requirement metadata. The Python `orbit-admin` package owns the operations API, CRUD plugin,
+HTTP client, audit sinks, and its process-local limiter, with direct dependencies on the capability
+packages it uses. See [ADR 0022](../architecture/adr/0022-extract-database-and-authentication.md)
+, [ADR 0025](../architecture/adr/0025-admin-capability-boundary.md), and [ADR 0026](../architecture/adr/0026-auth-capability-boundary.md) for the accepted boundaries.
 
-```text
-Application code
-└── orbit_data.Repository
-    └── orbit_sql.SQLRepository
-        └── Core SQLDatabase contract
-            ├── Core SQLiteDatabase (built in)
-            └── orbit_sql_postgres.PostgresDatabase (optional)
-```
+The Core container remains a generic resource owner. A provider plugin may register an async
+resource factory at a package-owned key. Core resolves and closes that resource without importing the
+provider package or knowing its driver. Capability registries are explicit: they never scan entry
+points or import arbitrary installed packages.
 
-`orbit-data` defines typed repository and Unit-of-Work protocols. `orbit-sql` implements them over
-Core's `SQLDatabase` contract (including Core's SQLite baseline) and owns explicit SQL adapter
-selection. `orbit-sql-postgres` owns asyncpg and PostgreSQL pool lifecycle while returning a
-Core-compatible SQL resource. Applications select trusted adapters explicitly; no registry scans
-or imports arbitrary installed providers. These are pre-alpha local workspaces, not published
-releases or stable APIs.
+This layering is not a claim that Core defines one universal provider protocol. Each capability
+package must version its own adapter contract, provider selection and conflict rules, and
+compatibility tests. Core's plugin metadata, dependency ordering, setup and lifecycle hooks supply
+the generic runtime boundary.
 
-None of those separately installed optional packages is built into the Core distribution. The intentional
-exceptions live in Core itself: provider-neutral contracts and orchestration primitives, the
-stdlib-backed SQLite baseline, and opt-in static-user Basic Auth. For example, an app may use Core's
-SQLite without installing PostgreSQL support; PostgreSQL requires the separately installed
-`orbit-sql-postgres` adapter (and its capability packages). Likewise, Core's Basic Auth baseline
-does not bundle JWT, OAuth/OIDC, an identity provider, or advanced provider integrations.
-`orbit-security` currently provides optional HTTP rate-limit middleware; Core retains only the
-bounded local limiter needed by its own Admin surface. Orbit has one optional `orbit-security`
-package for additional security policies; its current implementation is request-level rate limiting.
-Core's built-in security baseline remains available without that package, while JWT verification
-and provider-specific identity integrations remain separately installable.
+## Python and process plugins
 
-The capability package must define how an application selects an adapter and what happens if
-multiple adapters are installed or enabled. Core's generic capability declarations do not resolve
-those provider conflicts.
+Core's in-process Python plugin path remains available. The optional
+`orbit-core[process-plugins]` extra also provides a versioned local gRPC/Protocol Buffers process
+boundary for separately packaged JavaScript/TypeScript, Go and Rust implementations. The wire
+schema is in `orbit.plugins.v1.process_plugin.proto`; capability packages own their messages, typed
+SDKs and cross-language conformance tests.
 
-This layering is not a claim that Core defines a general plugin-to-plugin adapter protocol. Core's
-plugin runtime provides metadata, dependency ordering, capability declarations, setup, and
-lifecycle hooks. Each capability package must define and version its own adapter contract, provider
-selection and conflict rules, and compatibility tests before provider plugins can rely on it. Do
-not add provider implementations to Core or presume those capability-level contracts belong there.
-
-The current Core runtime loads Python plugins from the `orbit.plugins` entry-point group and invokes
-their in-process Python protocol. Metadata declares the plugin API version, semantic version,
-capabilities, required dependencies, and optional dependencies. `orbit.plugins.CORE_API_VERSION` is
-the single negotiated Core contract label; it is independent of the package release version, and an
-incompatible contract change must increment it with migration notes. The metadata model strictly
-validates plugin names, dependency names, capability identifiers, and text types before
-registration; required dependencies must be installed and form an acyclic graph, while optional
-dependencies participate in ordering only when present. `PluginRegistry.with_capability()`
-provides deterministic capability discovery.
-
-Rust, C++, Go, and JavaScript/TypeScript plugins are an ecosystem goal, not a capability of this
-loader today. A Pydantic metadata model and Python `Protocol` do not define a cross-language ABI or
-wire contract. Supporting foreign-language plugins requires an explicit, versioned boundary—such as
-a carefully specified process protocol or native ABI—with lifecycle, framing, error, identity,
-resource, and shutdown semantics. No such host or protocol is implemented or implied here.
-Registration validates the supported Core API before any setup or activation code runs. Core keeps
-a frozen metadata snapshot and verifies that plugin identity and dependency metadata do not change
-after registration; mutation fails closed. Cleanup resolves plugin names from that snapshot so a
-failing hook cannot corrupt rollback bookkeeping.
-
-Enablement is explicit before freeze: `PluginRegistry.disable(name)` and `enable(name)` control
-setup and activation. Disabled required dependencies fail validation; disabled optional
-dependencies are omitted. Plugin operation names and capability lookups use the same bounded
-identifier contracts as metadata. Composition inspection reports enabled plugin names.
-
-Entry-point discovery is also explicit and allowlisted. Allowlist names must be bounded lowercase
-identifiers and must be unique; the allowlist is capped at 1,024 names and Core validates it while
-copying, before consulting package metadata, even when a custom collection reports an inaccurate
-length. An empty allowlist performs no discovery. Allowlisting authorizes execution of installed
-plugin code; it is not a sandbox or a substitute for package and deployment trust controls.
-
-Registration validates plugin metadata and callable lifecycle hooks before the plugin enters the
-registry. Activation and deactivation deadlines must be finite positive numbers, and malformed
-metadata or operations become structured plugin errors before plugin code runs.
-
-`PluginContract` is the minimal runtime protocol: validated metadata plus `activate()` and
-`deactivate()`. The composition-time `setup(application)` hook is optional. Plugins that need no
-composition contributions may implement only the minimal protocol; subclasses of the convenience
-`Plugin` base class inherit a no-op `setup()` that they can override. When provided, setup runs
-synchronously before composition freezes and must register resources without acquiring them.
-
-Plugins can declare `required_capabilities`; composition validation resolves these against the
-capabilities advertised by enabled plugins and fails before setup when one is unavailable. This
-is Core's generic composition check, not a provider-adapter protocol: a capability package must
-still define what its adapters implement and how applications select them. This keeps Core
-capability-neutral while leaving package trust, signature verification, sandboxing, secrets
-delivery, and provider availability to the host deployment.
-
-## Plugin implementation checklist
-
-A production plugin should document and test:
-
-- the Core API range and provider compatibility;
-- every service/provider it registers and its scope;
-- startup, shutdown, retry, timeout, and cancellation behavior;
-- readiness versus liveness and degraded states;
-- configuration keys, secret references, and safe redaction;
-- failure classification and recovery behavior;
-- metrics, tracing, audit events, and bounded diagnostics;
-- migration, upgrade, and rollback behavior.
-
-Do not import a provider SDK from Core to make a plugin easier to write. Keep that dependency in
-the adapter package so applications that do not use the capability remain small and isolated.
-
-## Composition example
-
-An application explicitly registers a plugin before the router and provider graph are frozen:
-
-```python
-from orbit import Application, ApplicationConfig
-
-application = Application(ApplicationConfig(name="orders"))
-application.plugins.register(PostgresPlugin(config_key="database"))
-
-# Core validates dependencies and capabilities during application configuration.
-# The plugin registers its provider and service through Core's container contracts.
-```
-
-The concrete plugin class is intentionally outside this repository. A plugin package owns its
-configuration model and installation instructions; this example demonstrates only the stable
-composition boundary. Optional integrations are separate workspace packages; only the packages
-listed in the ownership map have implementations today.
+The process host supervises trusted local executables. It requires an absolute executable path and
+argument vector, does not invoke a shell, bounds configuration and messages, passes a one-use
+authentication token through stdin, binds only to loopback, and reaps the child during rollback and
+shutdown. Its plaintext loopback transport is not a sandbox: the child runs with the application's
+operating-system privileges. Use OS/container isolation when plugins need reduced privileges. Never
+send secrets in command arguments, environment variables, logs or health/error messages.

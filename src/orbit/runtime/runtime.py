@@ -18,7 +18,7 @@ from orbit.asgi import ASGIApplication
 from orbit.asgi.types import Receive, Scope, Send
 from orbit.diagnostics.tracing import Tracer
 from orbit.runtime.models import HostingConfig, RuntimeInfo
-from orbit.security.contracts import Authenticator
+from orbit.security.contracts import Authenticator, RouteAuthorizer
 
 
 class Runtime:
@@ -29,6 +29,7 @@ class Runtime:
         application: Application,
         *,
         authenticator: Authenticator | None = None,
+        authorizer: RouteAuthorizer | None = None,
         tracer: Tracer | None = None,
         hosting: HostingConfig | None = None,
     ) -> None:
@@ -38,7 +39,9 @@ class Runtime:
             raise TypeError("Runtime hosting must be a HostingConfig instance.")
         self.application = application
         self.hosting = HostingConfig() if hosting is None else hosting
-        self.asgi = ASGIApplication(application, authenticator=authenticator, tracer=tracer)
+        self.asgi = ASGIApplication(
+            application, authenticator=authenticator, authorizer=authorizer, tracer=tracer
+        )
 
     @property
     def info(self) -> RuntimeInfo:

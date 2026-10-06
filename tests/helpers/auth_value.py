@@ -11,24 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Core SQL capability contracts and the built-in SQLite implementation."""
+"""Opaque authenticated test values for Core extension-contract checks."""
 
-from orbit.database.contracts import (
-    SQLDatabase,
-    SQLExecution,
-    SQLParameters,
-    SQLRow,
-    SQLTransaction,
-    SQLValue,
-)
-from orbit.database.sqlite import SQLiteDatabase
+from dataclasses import dataclass
 
-__all__ = [
-    "SQLDatabase",
-    "SQLExecution",
-    "SQLParameters",
-    "SQLRow",
-    "SQLTransaction",
-    "SQLValue",
-    "SQLiteDatabase",
-]
+
+@dataclass(frozen=True)
+class AuthTestIdentity:
+    """Minimal test-only identity shape consumed by Admin audit fixtures."""
+
+    subject: str
+    provider: str
+
+
+@dataclass(frozen=True)
+class AuthTestPrincipal:
+    """Minimal test-only role subject; Core treats this value as opaque."""
+
+    identity: AuthTestIdentity
+    roles: frozenset[str]
+
+
+__all__ = ["AuthTestIdentity", "AuthTestPrincipal"]

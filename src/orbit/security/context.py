@@ -15,25 +15,21 @@
 
 from contextvars import ContextVar, Token
 
-from orbit.security.principal import Principal
-
-_principal: ContextVar[Principal | None] = ContextVar("orbit_principal", default=None)
+_principal: ContextVar[object | None] = ContextVar("orbit_principal", default=None)
 
 
-def current_principal() -> Principal | None:
-    """Return the principal bound to the current asynchronous context."""
+def current_principal() -> object | None:
+    """Return the opaque authentication value bound to this asynchronous request."""
     return _principal.get()
 
 
-def bind_principal(principal: Principal | None) -> Token[Principal | None]:
-    """Bind a principal for the current context and return a reset token."""
-    if principal is not None and not isinstance(principal, Principal):
-        raise TypeError("Security context values must be Principal instances or None.")
+def bind_principal(principal: object | None) -> Token[object | None]:
+    """Bind an opaque authentication value for the current context and return a reset token."""
     return _principal.set(principal)
 
 
-def reset_principal(token: Token[Principal | None]) -> None:
-    """Restore the principal context captured by ``bind_principal``."""
+def reset_principal(token: Token[object | None]) -> None:
+    """Restore the authentication value captured by ``bind_principal``."""
     _principal.reset(token)
 
 

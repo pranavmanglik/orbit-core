@@ -20,10 +20,22 @@ trusted code. If a capability package defines a separate provider-adapter contra
 contract and its version range independently; Core's plugin API version does not version
 capability-specific APIs.
 
-Multi-language plugins remain a project goal, not a currently supported runtime feature. Do not
-assume this in-process Python protocol can be implemented directly by Rust, C++, Go, or
-JavaScript/TypeScript. A future language-neutral host boundary needs its own versioning, lifecycle,
-message or ABI contract, failure behavior, and security model before such plugins can be authored.
+For an opt-in local process plugin, install `orbit-core[process-plugins]` and construct
+`orbit.plugins.process.ProcessPlugin` with a validated `PluginMetadata`, an absolute executable and
+argument sequence, and bounded JSON-object configuration bytes. Core launches the child without a
+shell and completes a versioned gRPC handshake before activation. Capability adapters can use
+`invoke()` with their generated Protocol Buffer request/response types; capability repositories own
+those types and the typed API presented to application code.
+
+The host includes generated Python bindings and the versioned `.proto` source. Capability-owned
+Rust stream and Go Kubernetes packages include focused SDK/runtime implementations and Core-host
+checks; they are package-specific examples, not general SDK support for every capability. TypeScript
+process support and broader conformance suites remain open. The process host does not expose the
+Python `setup(application)` hook to the child; use a small
+capability adapter in the host language to make Core registrations. Process plugins are trusted
+code, not sandboxed code. They run as the application user and receive the configuration passed to
+them. The current local gRPC channel uses plaintext loopback plus a one-use token, so it is not for
+remote or mutually untrusted plugins. Never pass secrets in command arguments or error/health text.
 
 ## Registration and setup
 
@@ -60,6 +72,10 @@ circuit-breaker, and bulkhead policies are optional in the separate `orbit-resil
 Classify transient failures without retrying cancellation or non-idempotent writes blindly.
 Register bounded metrics and spans with stable names and low-cardinality labels; export them
 through a telemetry plugin.
+
+For process plugins, use capability-specific message schemas and wrappers, bound each request,
+preserve cancellation and deadlines, and map provider failures to stable codes without returning
+secrets or raw provider diagnostics.
 
 ## Required tests
 

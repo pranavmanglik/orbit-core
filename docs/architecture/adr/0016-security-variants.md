@@ -37,7 +37,7 @@ implementing or moving code for them.
 - Current `orbit-security` claims remain limited to its existing rate-limit middleware.
 - The planned variants remain explicitly unimplemented until their scope and package boundaries are
   designed and their own code, tests, documentation, and packaging are available.
-- JWT verification remains in `orbit-jwt`; future OAuth/OIDC and vendor integrations remain
+- JWT verification remains in `orbit-auth-jwt`; future OAuth/OIDC and vendor integrations remain
   optional packages.
 
 ## Evidence

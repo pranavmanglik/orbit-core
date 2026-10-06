@@ -25,8 +25,6 @@ JOB_HEADER = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 PINNED_ACTION = re.compile(r"^\s*(?:-\s+)?uses:\s+([^@\s]+)@([0-9a-f]{40})\s+#\s+v\S+\s*$")
 CHECKOUT_STEP = re.compile(r"^(\s*)-\s+uses:\s+actions/checkout@")
 PERSIST_CREDENTIALS_FALSE = re.compile(r"^\s+persist-credentials:\s*false\s*$")
-ORBIT_TESTING_REPOSITORY = re.compile(r"^\s+repository:\s*orbit-projects/orbit-testing\s*$")
-ORBIT_TESTING_PATH = re.compile(r"^\s+path:\s*orbit-testing\s*$")
 
 
 def workflow_files() -> list[Path]:
@@ -48,27 +46,6 @@ def job_ranges(lines: list[str]) -> list[tuple[str, int, int]]:
         (name, start, headers[index + 1][1] if index + 1 < len(headers) else len(lines))
         for index, (name, start) in enumerate(headers)
     ]
-
-
-def has_orbit_testing_checkout(lines: list[str]) -> bool:
-    """Return whether one checkout step places orbit-testing beside Core."""
-    for index, line in enumerate(lines):
-        checkout = CHECKOUT_STEP.match(line)
-        if checkout is None:
-            continue
-        step_indent = len(checkout.group(1))
-        step_lines: list[str] = []
-        for following_line in lines[index + 1 :]:
-            if len(following_line) - len(
-                following_line.lstrip()
-            ) == step_indent and following_line.lstrip().startswith("-"):
-                break
-            step_lines.append(following_line)
-        if any(ORBIT_TESTING_REPOSITORY.fullmatch(item) for item in step_lines) and any(
-            ORBIT_TESTING_PATH.fullmatch(item) for item in step_lines
-        ):
-            return True
-    return False
 
 
 def errors_for(path: Path) -> list[str]:
@@ -125,10 +102,9 @@ def errors_for(path: Path) -> list[str]:
         if not any(line.strip().startswith("timeout-minutes:") for line in block):
             errors.append(f"{path}:{start + 1}: job {name!r} has no timeout-minutes")
 
-    if path.name in {"ci.yml", "release.yml"} and not has_orbit_testing_checkout(lines):
+    if path.name in {"ci.yml", "release.yml"} and any("orbit-testing" in line for line in lines):
         errors.append(
-            f"{path}: CI and release workflows must check out orbit-projects/orbit-testing "
-            "at the sibling path orbit-testing for the development test dependency"
+            f"{path}: Core CI and release must not depend on a separate orbit-testing checkout"
         )
 
     if path.name == "ci.yml":

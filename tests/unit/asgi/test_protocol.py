@@ -505,12 +505,6 @@ async def test_canonical_root_path_is_removed_before_route_dispatch() -> None:
     assert messages[1]["body"] == b'{"path":"/items","root_path":"/api"}'
 
 
-def test_admin_scope_detection_handles_root_mount() -> None:
-    assert ASGIApplication._is_admin_scope_path({"path": "/admin/config", "root_path": "/"})
-    assert ASGIApplication._is_admin_scope_path({"path": "/api/admin/config", "root_path": "/api"})
-    assert not ASGIApplication._is_admin_scope_path({"path": "/administration", "root_path": ""})
-
-
 @pytest.mark.parametrize("scope", [{}, None, []])
 async def test_invalid_asgi_scope_is_rejected_explicitly(scope):
     app = Application(ApplicationConfig(name="scope-type-validation"))

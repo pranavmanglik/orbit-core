@@ -1,6 +1,6 @@
 # ADR 0017: Use one optional Orbit Security package
 
-- Status: Accepted
+- Status: Superseded by [ADR 0022](0022-extract-database-and-authentication.md)
 - Date: 2026-10-05
 
 ## Context

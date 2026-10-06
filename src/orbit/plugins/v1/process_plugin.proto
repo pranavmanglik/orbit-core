@@ -1,0 +1,109 @@
+// Copyright 2026-present Orbit Contributors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package orbit.plugin.v1;
+
+import "google/protobuf/any.proto";
+
+// Core and a supervised local plugin exchange lifecycle frames on one stream.
+// Capability packages define their own typed services in separately installable repos.
+service ProcessPlugin {
+  rpc Connect(stream PluginFrame) returns (stream CoreFrame);
+}
+
+message PluginMetadata {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string api_version = 4;
+  repeated string dependencies = 5;
+  repeated string optional_dependencies = 6;
+  repeated string capabilities = 7;
+  repeated string required_capabilities = 8;
+}
+
+message PluginFrame {
+  oneof payload {
+    PluginHello hello = 1;
+    CommandResult command_result = 2;
+    PluginHealth health = 3;
+    CapabilityResult capability_result = 4;
+  }
+}
+
+message PluginHello {
+  uint32 protocol_major = 1;
+  uint32 protocol_minor = 2;
+  PluginMetadata metadata = 3;
+}
+
+message CommandResult {
+  uint64 request_id = 1;
+  bool succeeded = 2;
+  string error_code = 3;
+  string error_message = 4;
+}
+
+message CapabilityResult {
+  uint64 request_id = 1;
+  google.protobuf.Any response = 2;
+  string error_code = 3;
+}
+
+message PluginHealth {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_HEALTHY = 1;
+    STATUS_DEGRADED = 2;
+    STATUS_UNHEALTHY = 3;
+  }
+  uint64 request_id = 1;
+  Status status = 2;
+  string message = 3;
+}
+
+message CoreFrame {
+  oneof payload {
+    PluginCommand command = 1;
+    HealthProbe health_probe = 2;
+    Shutdown shutdown = 3;
+    CapabilityCall capability_call = 4;
+  }
+}
+
+message PluginCommand {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_ACTIVATE = 1;
+    KIND_DEACTIVATE = 2;
+  }
+  uint64 request_id = 1;
+  Kind kind = 2;
+  bytes configuration_json = 3;
+}
+
+message HealthProbe {
+  uint64 request_id = 1;
+}
+
+// Capability packages publish their typed request/response messages in their own repositories.
+message CapabilityCall {
+  uint64 request_id = 1;
+  string method = 2;
+  google.protobuf.Any request = 3;
+}
+
+message Shutdown {}

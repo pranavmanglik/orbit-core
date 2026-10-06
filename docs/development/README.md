@@ -8,10 +8,10 @@ Orbit Core changes are changes to a public orchestration contract. Identify the 
 before editing (application, container, plugin, adapter, ASGI, or observability), document lifecycle
 and failure semantics, and keep provider SDKs in plugin packages.
 
-The Core development dependency group resolves the separate `orbit-testing` package from
-`../orbit-testing`. Check out that repository beside Core before syncing; it is a development-only
-dependency and is not installed for applications using the Core wheel. CI supplies the same sibling
-workspace layout by checking out both repositories.
+Core's own ASGI integration tests use a private harness in `tests/helpers`, avoiding a cycle where
+Core tests depend on an optional package that itself depends on Core. The independent
+`orbit-testing` distribution remains available to plugin authors for reusable ASGI contract tests;
+Core CI and release jobs do not check out that sibling repository.
 
 Install the locked development environment and run the same checks as CI. It includes the
 production `server` extra so the opt-in Gunicorn/Uvicorn worker tests can run. For ordinary local
@@ -19,7 +19,7 @@ development outside this full test environment, use `--extra development-server`
 Uvicorn.
 
 ```bash
-uv sync --frozen --extra dev --extra server
+uv sync --frozen --extra dev --extra server --extra process-plugins
 uv lock --check
 uv run --no-sync ruff check src tests scripts examples
 uv run --no-sync ruff format --check src tests scripts examples
@@ -30,6 +30,7 @@ uv run --no-sync python scripts/check-model-boundaries.py
 uv run --no-sync pytest --cov=orbit --cov-report=term-missing
 uv run --no-sync python scripts/check-documentation.py
 uv run --no-sync python scripts/check-license-headers.py
+uv run --no-sync python scripts/generate-process-plugin-protocol.py
 uv run --no-sync python -m build --no-isolation
 uv run --no-sync python scripts/check-package.py dist
 uv run --no-sync pip-audit --skip-editable --progress-spinner off
@@ -88,12 +89,12 @@ Every behavior change should include a focused regression test for cancellation,
 startup, resource cleanup, concurrency, or redaction when those guarantees are affected. Run the
 real hosting test when changing worker, signal, or reload behavior.
 
-Install the separate `orbit-testing` workspace for in-process ASGI tests, then use
+For plugin and application tests, install the separate `orbit-testing` distribution and use
 `orbit_testing.TestClient` as an async context manager around a freshly composed application. It
 owns real startup/shutdown messages, validates response framing, preserves repeated request
 headers, applies Core's public request/header/path/query limits, and translates encoded paths as an
 ASGI host would. Each client is single-use. `lifespan_timeout` bounds protocol waits; failures
-surface immediately. Install it in the workspace with `python -m pip install -e ../orbit-testing`.
+surface immediately. Core itself uses its private test harness under `tests/helpers`.
 
 See [operations](operations.md) for hosting and observability, [documentation conventions](documentation.md)
 for source and Markdown standards, [public API stability](api-stability.md) for compatibility and

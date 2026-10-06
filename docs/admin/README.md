@@ -1,118 +1,36 @@
-# Administrative surface
+# Orbit Admin
 
-Orbit Core's first-class Admin foundation is an opt-in, authenticated HTML overview and a set of
-typed inspection and operational endpoints backed by the same application, service, plugin, health,
-and diagnostic state as the runtime and CLI. It is not a general business-data CRUD or analytics
-dashboard. The broader `orbit-admin` dashboard framework in the ecosystem plan is an optional
-package and is not implemented in this repository or the current local sibling workspaces.
+Core does not implement, configure, or automatically mount Admin routes. Install the Python
+package from [`orbit-admin`](../../../orbit-admin/python/README.md) to add protected operations
+views and explicitly configured repository CRUD routes. The package uses Core's stable routing,
+lifecycle, `AdminContribution`, authentication, and authorization contracts; `orbit-security`,
+`orbit-data`, and `orbit-sql` are direct package dependencies.
 
-Enable `ApplicationConfig(admin_enabled=True)` and supply an `Authenticator` to the runtime.
-All inspection requires `orbit.admin.read`. An absent identity produces 401; insufficient
-roles produce 403. No built-in password, bearer token or permissive fallback is provided.
+`AdminPlugin(resources)` registers the operations console and CRUD routes. Operations include a
+per-process bounded rate limit, role metadata (`orbit.admin.read` and `orbit.admin.write`), CSRF
+checks for mutations, no-store response headers, and a bounded payload-free audit sink. Core no
+longer has `admin_enabled`, an Admin route dispatcher, Admin audit history, or a rate limiter.
 
-For a small local deployment, Core's built-in Basic Authenticator can provide that identity. Supply
-the password through the deployment's secret mechanism (environment variables are shown here only
-as an example); do not hardcode or commit it:
+Use `AdminPlugin(resources, operations=False)` when only the explicit CRUD routes are needed, or
+register `AdminOperationsPlugin` when the operations console is needed without resource CRUD.
+Every protected route still requires a configured authenticator and `RouteAuthorizer`; routes fail
+closed when either is missing. No credentials are provisioned by default. Basic Auth is opt-in,
+requires TLS by default, and uses salted adaptive hashes. Do not store plaintext passwords or
+commit credentials. Production use requires protected secret provisioning, trusted TLS termination,
+credential rotation, and review of whether static-user Basic Auth fits the deployment.
 
-```python
-import os
+The Python package offers payload-free in-process audit history by default or an optional
+`SQLAdminAuditLog` backed by the application-owned `SQLDatabase`. SQL audit writes run in their own
+transaction after resource CRUD; the repository contract cannot yet atomically commit a resource
+mutation and audit entry together. Audit storage is bounded but not tamper-evident. Live MySQL and
+PostgreSQL audit operation and hosted release evidence remain open.
 
-from pydantic import SecretStr
+The operations console reads Core state through `Application` and the stable Admin contribution
+inspection contract. Contribution inspection is bounded by Core's configured health deadline and
+cancellation-resistant work is detached under Core lifecycle ownership. HTML output escapes values;
+configuration uses Core's secret-aware inspection. Mutation routes require explicit non-browser
+authorization and reject requests carrying an Origin header.
 
-from orbit import Application, ApplicationConfig
-from orbit.runtime import Runtime
-from orbit.security import BasicAuthenticator, BasicCredential
-
-application = Application(ApplicationConfig(name="orders", admin_enabled=True))
-admin = BasicCredential.create(
-    os.environ["ORBIT_ADMIN_USERNAME"],
-    SecretStr(os.environ["ORBIT_ADMIN_PASSWORD"]),
-    roles=("orbit.admin.read", "orbit.admin.write"),
-)
-runtime = Runtime(application, authenticator=BasicAuthenticator([admin]))
-```
-
-Basic Auth requires HTTPS by default. For TLS termination at a reverse proxy, configure Core to
-trust forwarded scheme information only from the proxy's explicitly trusted address range; never
-forward client-supplied `Forwarded` or `X-Forwarded-Proto` values blindly. The sample credential
-has both read and write roles; grant only the roles each operator needs.
-
-| Endpoint | Data or operation |
-| --- | --- |
-| /admin | Server-rendered overview of Core state |
-| /admin/state | Application and service snapshot |
-| /admin/services | Registered service identities and dependencies |
-| /admin/tasks | Supervised background task state and bounded failures |
-| /admin/plugins | Plugin metadata and capabilities |
-| /admin/routes | Routes, ownership and required roles |
-| /admin/dependencies | Provider scopes, declared dependencies and resource ownership |
-| /admin/config | Redacted Pydantic configuration |
-| /admin/lifecycle | Recent lifecycle transitions |
-| /admin/health | Last recorded application and component health |
-| /admin/diagnostics | Counters, latency buckets and bounded request history |
-| /admin/events | Bounded delivery metadata without event payloads |
-| /admin/audit | Bounded administrative mutation audit records |
-| /admin/extensions/{name} | Registered extension inspection model |
-| POST /admin/health/refresh | Refresh health using live component checks |
-| POST /admin/services/{name}/restart | Restart an isolated leaf service |
-| POST /admin/services/{name}/reload | Reload a service or use its restart fallback |
-| POST /admin/services/{name}/start | Start an initialized stopped service |
-| POST /admin/services/{name}/stop | Stop an isolated leaf service |
-
-Health refresh also requires `orbit.admin.write`, a nonempty Authorization header and
-no browser Origin header. The authenticator must actually verify credentials. Other unsupported
-methods return 405. Every runtime admin response, including errors and mutation responses,
-has `Cache-Control: no-store`.
-
-Service start, stop, restart and reload also require `orbit.admin.write` and explicit non-browser
-authorization. Service and task targets must be bounded lowercase slugs, matching `AdminClient`;
-malformed names fail with 400 before lookup or lifecycle work. Core rejects stopping or restarting a service while a running service depends
-on it, preventing a dependent graph from observing a stopped dependency. Starting a service
-requires all declared dependencies to be running.
-
-Successful and failed administrative mutations are retained in a bounded `/admin/audit` view.
-Records contain action, target, principal subject/provider, outcome and a safe error code; raw
-credentials, request bodies and exception messages are never recorded. Audit text rejects control
-characters, error codes are bounded identifier-shaped values, and timestamps must be timezone-aware.
-
-HTML values are escaped; the dashboard has frame and content-security restrictions.
-Configuration uses Core's secret-aware inspection rather than independent admin settings.
-
-Register `AdminContribution` objects before configuration. Registration validates the protocol,
-the bounded lowercase name, and the callable inspection method. Names must be unique lowercase
-slugs. Each `inspect()` returns a Pydantic model from an awaitable and has a health-timeout deadline.
-A failing or timed-out contribution appears as unavailable without disabling Core views;
-exception messages are not returned to clients. A cancellation-resistant contribution is detached
-and only one late inspection is retained per extension, so repeated admin requests cannot create
-an unbounded set of orphan tasks. Concurrent requests for the same extension also fail closed
-while its first inspection is still running, so the registry cannot be overwritten by racing
-requests. Extension implementations must use Pydantic secret types and avoid blocking synchronous
-operations.
-
-Core does not hot-install packages or rewire a running service graph. Plugin composition is
-frozen at startup. Package installation and identity-provider administration belong to
-their respective deployment and adapter systems.
-
-`AdminClient` is the typed remote-client boundary. It sends bearer credentials, allowlists
-inspection sections, validates service and task operations, and converts structured remote
-failures into `AdminClientError`. Only final `2xx` responses count as success; redirects, cache
-statuses, and `4xx–5xx` responses fail with a structured error, and malformed remote error codes
-are replaced with a safe fallback.
-An instance binds to the event loop of its first request and must not be reused from another loop;
-create one client per application event loop.
-Supply an `AdminTransport` adapter to control HTTP pooling,
-TLS, proxies, retries, and certificate policy without adding a network dependency to Core.
-Credentials and operation identifiers are bounded and validated before an adapter call. Async
-transport calls use a bounded operation budget as well; a timed-out call retains its slot until
-the underlying adapter task actually returns, so distinct stalled paths cannot accumulate unlimited
-late work. Each transport invocation receives a detached header mapping, so an adapter cannot mutate
-the client's stored bearer credential or affect concurrent requests. Core does not silently coerce
-remote status or client timeout configuration values. The synchronous worker-slot and asynchronous
-operation budgets are each bounded to 1,000,000. `AdminHTTPResponse` also validates a final `2xx–5xx`
-status and its top-level JSON object, then returns a detached, recursively immutable body, so
-transport-owned response data cannot change after the adapter returns. Response keys must already be strings; Core does not silently
-coerce malformed remote JSON keys into operator-facing data. Synchronous transports run outside the event loop with
-bounded worker threads. Async callable objects are recognized as async transports. A timed-out
-or cancelled call retains its worker slot or one per-operation detached async task until the
-underlying transport returns, so a stalled adapter cannot create unbounded background work;
-waiting for an available synchronous slot is also bounded by the request timeout.
+Core tests verify the generic `AdminContribution` lifecycle contract. The Admin package owns the
+HTTP route, auth, audit, and CRUD tests. See the Admin repository README for the current endpoint
+list and limits; locally passing tests are not a production certification.

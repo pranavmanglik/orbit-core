@@ -24,8 +24,8 @@ evidence = "Public API contract tests, strict mypy, model-boundary validation, a
 [[areas.core_contracts.criteria]]
 points = 7
 status = "earned"
-requirement = "Core keeps external providers optional while offering only the agreed local baselines: stdlib SQLite and opt-in static-user Basic Auth. External databases, identity providers, JWT libraries, brokers, cloud clients, and telemetry exporters integrate through stable contracts in separately installable packages."
-evidence = "Core dependency manifest, database and security architecture guides, packaging-boundary regression tests, public contract tests, and sibling orbit-data/orbit-sql/orbit-sql-postgres/orbit-jwt/orbit-resilience packages."
+requirement = "Core contains orchestration and generic extension contracts only. Authentication/authorization and database capabilities are separately installable through orbit-security, orbit-data, orbit-sql/orbit-nosql, and their provider packages."
+evidence = "Database and authentication implementations, Admin routes/client/audit state, and Admin limiter have been extracted. Core retains opaque request-authentication transport plus generic route-authorizer and Admin-contribution contracts; ADRs 0022 and 0025 document boundaries and local evidence."
 
 [[areas.core_contracts.criteria]]
 points = 8
@@ -54,7 +54,7 @@ evidence = "Core application-ownership tests plus orbit-devtools reload, cancell
 points = 5
 status = "earned"
 requirement = "ASGI request, response, framing, disconnect, overload, header, body, path, and query limits fail safely."
-evidence = "Core ASGI protocol and HTTP runtime tests; separately installed orbit-testing ASGI contract tests; orbit-gateway CORS/compression tests; Core Admin-local limiter tests; and separately installed orbit-security HTTP middleware tests."
+evidence = "Core ASGI protocol and HTTP runtime tests use Core's private tests/helpers harness; separately installed orbit-testing contract tests cover downstream use; orbit-gateway CORS/compression tests; Core Admin-local limiter tests; and separately installed orbit-security HTTP middleware tests."
 
 [[areas.reliability_operations.criteria]]
 points = 5
@@ -106,13 +106,13 @@ earned = 20
 points = 8
 status = "earned"
 requirement = "The full behavioral suite and strict coverage threshold pass."
-evidence = "1,028 passing Core tests with 2 opt-in hosting tests skipped by default; isolated coverage from the current tox environments is 91.6534% on Python 3.11, 91.6733% on 3.12, 91.6932% on 3.13, and 91.6683% on 3.14."
+evidence = "The current tree passes 1,015 Core tests with 2 opt-in hosting tests skipped by default on Python 3.11–3.14; coverage is 90.98% on 3.11, 91.03% on 3.12 and 3.13, and 91.00% on 3.14."
 
 [[areas.tests_compatibility.criteria]]
 points = 7
 status = "earned"
 requirement = "Supported Python versions pass the lock-synchronized behavioral suite and real hosting smoke test."
-evidence = "All 1,028 default Core tests pass on Python 3.11, 3.12, 3.13, and 3.14; isolated coverage is above 90% in each tox environment. The current-candidate opt-in Uvicorn/Gunicorn real-host suite passes 2 tests on each supported interpreter."
+evidence = "The current lock-synchronized candidate passes 1,015 tests on each Python 3.11–3.14 interpreter, with 2 opt-in skips per run; both real Uvicorn/Gunicorn hosting tests pass on each interpreter."
 
 [[areas.tests_compatibility.criteria]]
 points = 5

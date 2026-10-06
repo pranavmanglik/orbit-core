@@ -14,19 +14,16 @@
 """Real ASGI lifespan, plugin composition and operational failure behavior."""
 
 import asyncio
-import base64
 from contextlib import asynccontextmanager
 
-from orbit_testing import TestClient
 from pydantic import BaseModel
 
 from orbit import Application, ApplicationConfig
 from orbit.asgi import ASGIApplication, Response
 from orbit.container import Scope
 from orbit.plugins import Plugin, PluginMetadata
-from orbit.runtime import Runtime
 from orbit.runtime.context import current_request_id
-from orbit.security import BasicAuthenticator, BasicCredential
+from tests.helpers.asgi_client import TestClient
 
 
 async def test_plugin_routes_are_composed_before_runtime_freezes():
@@ -67,44 +64,6 @@ async def test_metrics_endpoint_is_not_installed_by_core():
     async with TestClient(ASGIApplication(app)) as client:
         response = await client.request("GET", "/metrics")
     assert response.status == 404
-
-
-async def test_basic_auth_adds_challenge_to_protected_anonymous_response():
-    app = Application(ApplicationConfig(name="basic-auth-challenge"))
-
-    @app.router.route("/private", name="private", roles=frozenset({"ops"}))
-    async def private(request):
-        return Response.text("private")
-
-    authenticator = BasicAuthenticator([BasicCredential.create("operator", "secret")])
-    async with TestClient(ASGIApplication(app, authenticator=authenticator)) as client:
-        response = await client.request("GET", "/private")
-
-    assert response.status == 401
-    assert response.headers["www-authenticate"] == authenticator.challenge
-    assert response.json()["code"] == "security.forbidden"
-
-
-async def test_basic_auth_protects_builtin_admin_with_explicit_role():
-    """Runtime wires Core Basic Auth into Admin and enforces its role and TLS requirements."""
-    app = Application(ApplicationConfig(name="basic-auth-admin", admin_enabled=True))
-    credential = BasicCredential.create(
-        "operator", "secret", roles=("orbit.admin.read", "orbit.admin.write")
-    )
-    authenticator = BasicAuthenticator([credential])
-    authorization = "Basic " + base64.b64encode(b"operator:secret").decode("ascii")
-
-    async with TestClient(Runtime(app, authenticator=authenticator)) as client:
-        anonymous = await client.request("GET", "https://orbit.test/admin/state")
-        authenticated = await client.request(
-            "GET",
-            "https://orbit.test/admin/state",
-            headers={"authorization": authorization},
-        )
-
-    assert anonymous.status == 401
-    assert anonymous.headers["www-authenticate"] == authenticator.challenge
-    assert authenticated.status == 200
 
 
 async def test_route_models_validate_request_and_response():

@@ -22,7 +22,6 @@ Use the focused package exports for the rest of Core:
 | `orbit.services` | Service contracts and registration | `Service`, `ServiceContract`, `ServiceDescriptor`, `ServiceRegistry` |
 | `orbit.config` | Typed settings, snapshots, secret and watcher contracts | `ApplicationConfig`, `Config`, `ConfigurationWatcher`, `load_config`, `SecretReference` |
 | `orbit.container` | Dependency injection and resource ownership | `Container`, `ContainerContract`, `Provider`, `Scope`, `ProviderResolution` |
-| `orbit.database` | Asynchronous SQL contracts and built-in SQLite | `SQLDatabase`, `SQLTransaction`, `SQLRow`, `SQLiteDatabase` |
 | `orbit.errors` | Structured problems and Core exception types | `OrbitProblem`, `ErrorResponse`, `OrbitError`, `ValidationError` |
 | `orbit.cli` | Typer/Rich operator command entry point | `app` |
 | `orbit.lifecycle` | Validated lifecycle phases and transitions | `Lifecycle`, `LifecycleObserver`, `LifecyclePhase` |
@@ -33,9 +32,9 @@ Use the focused package exports for the rest of Core:
 | `orbit.health` | Component and aggregate health reporting | `HealthCheck`, `HealthService`, `HealthReport` |
 | `orbit.runtime` | ASGI runtime, hosting configuration, and task supervision | `Runtime`, `HostingConfig`, `TaskSupervisor` |
 | `orbit.asgi` | Core ASGI request, response, and middleware boundary | `ASGIApplication`, `Middleware`, `Headers`, typed `Request`, `Response`, ASGI message types |
-| `orbit.admin` | Authenticated inspection and remote admin client contracts | `AdminApplication`, `AdminContribution`, `AdminClient` |
-| `orbit.security` | Identity, authentication, authorization, and token contracts | `Principal`, `Authenticator`, `PolicyEngine` |
-| `orbit.diagnostics` | Logs, metrics, traces, and bounded inspection | `Diagnostics`, `MetricsRegistry`, `Tracer` |
+| `orbit.admin` | Stable inspection-contribution contract for optional Admin consumers | `AdminContribution` |
+| `orbit.security` | Authentication and authorization extension hooks | `Authenticator`, `RouteAuthorizer` |
+| `orbit.diagnostics` | Logs, metrics, traces, and bounded application inspection | `Diagnostics`, `MetricsRegistry`, `Tracer`, `inspect_composition` |
 | `orbit.types` | Domain-specific identifiers | `ApplicationId`, `ConfigurationId`, `EventId`, `ProviderId`, `RequestId`, `RouteId`, `ServiceId`, `SubscriptionId` |
 
 The optional `orbit-testing` distribution provides `orbit_testing.TestClient` and

@@ -100,6 +100,65 @@ def test_static_paths_take_precedence_independent_of_registration():
         router.register(Route(RouteMetadata(name="late", path="/late", method="GET"), handler))
 
 
+def test_static_path_precedence_only_applies_when_the_full_static_route_matches():
+    """A dead static prefix must not hide a matching parameter route."""
+    router = Router()
+    router.register(
+        Route(RouteMetadata(name="static-other", path="/a/fixed/other", method="GET"), handler)
+    )
+    router.register(
+        Route(RouteMetadata(name="parameter", path="/a/{key}/current", method="GET"), handler)
+    )
+
+    route, parameters = router.match("GET", "/a/fixed/current")
+
+    assert route.metadata.name == "parameter"
+    assert parameters == {"key": "fixed"}
+
+
+def test_static_path_method_mismatch_does_not_fall_back_to_parameter_route():
+    """A more specific path keeps its own Allow methods even when another path could match."""
+    router = Router()
+    router.register(Route(RouteMetadata(name="parameter", path="/a/{key}", method="GET"), handler))
+    router.register(Route(RouteMetadata(name="static", path="/a/current", method="POST"), handler))
+
+    with pytest.raises(RoutingError, match="Method is not allowed") as error:
+        router.match("GET", "/a/current")
+
+    assert error.value.problem.context["allow"] == "OPTIONS, POST"
+
+
+def test_route_index_does_not_iterate_the_full_registry_for_match_or_registration():
+    """Hot-path lookup and duplicate checks use indexes after composition."""
+
+    class NoScanList(list):
+        def __iter__(self):
+            raise AssertionError("The route registry was scanned.")
+
+    router = Router()
+    router.register(Route(RouteMetadata(name="first", path="/first/{key}", method="GET"), handler))
+    router._routes = NoScanList(router._routes)  # noqa: SLF001 - assert the public path uses indexes.
+
+    route, parameters = router.match("GET", "/first/42")
+    assert route.metadata.name == "first"
+    assert parameters == {"key": "42"}
+
+    router.register(Route(RouteMetadata(name="second", path="/second", method="GET"), handler))
+
+
+def test_route_index_handles_deep_paths_without_recursive_dispatch():
+    """Deep canonical paths do not consume Python's recursion stack."""
+    path = "/" + "/".join(["x"] * 1_000)
+    router = Router()
+    route = Route(RouteMetadata(name="deep", path=path, method="GET"), handler)
+    router.register(route)
+
+    matched, parameters = router.match("GET", path)
+
+    assert matched is route
+    assert parameters == {}
+
+
 @pytest.mark.parametrize("method", [None, 1, "CONNECT"])
 def test_direct_matching_rejects_unsupported_methods(method):
     router = Router()

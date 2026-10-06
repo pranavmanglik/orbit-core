@@ -35,6 +35,14 @@ GENERATED_DIRECTORIES = frozenset(
         "__pycache__",
         "build",
         "dist",
+        "node_modules",
+    }
+)
+GENERATED_PYTHON_FILES = frozenset(
+    {
+        "process_plugin_pb2.py",
+        "process_plugin_pb2_grpc.py",
+        "stream_processing_pb2.py",
     }
 )
 LOCAL_LINK = re.compile(r"\[[^]]+\]\(([^)]+)\)")
@@ -48,6 +56,7 @@ def python_files() -> list[Path]:
         for base in (*PYTHON_ROOTS, *sibling_python_roots())
         for path in base.rglob("*.py")
         if not GENERATED_DIRECTORIES.intersection(path.parts)
+        and path.name not in GENERATED_PYTHON_FILES
     )
 
 
