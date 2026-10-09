@@ -32,7 +32,7 @@ bundled into the Core wheel. Hosted CI checks it out into the same sibling path.
 committed lockfile:
 
 ```bash
-python -m pip install uv==0.12.13
+python -m pip install uv==0.12.23
 uv sync --frozen --extra dev --extra server
 uv lock --check
 ```

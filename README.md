@@ -36,7 +36,7 @@ cross-repository test dependency. Plugin authors can install the separately main
 Then create the environment from the committed lockfile:
 
 ```bash
-python -m pip install uv==0.12.13
+python -m pip install uv==0.12.23
 uv sync --frozen --extra dev --extra development-server --extra process-plugins
 uv lock --check
 uv run --no-sync pytest --cov=orbit
