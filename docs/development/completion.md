@@ -934,3 +934,44 @@ license-header checks, and the Core documentation/boundary tests passed on this 
 local host-process evidence, not a substitute for deployment behind the selected production proxy,
 representative external load, hosted CI, or release provenance. Core's release-readiness score
 remains **87/100**.
+
+## OpenTelemetry tracing adapter: orbit-tracing (2026-10-05)
+
+Implemented `orbit-tracing` as a separate optional package over Core's `Tracer` contract. It owns
+an isolated OpenTelemetry SDK provider, bounded batch processing, exporter lifecycle, and optional
+OTLP HTTP/gRPC dependencies. An opt-in outer ASGI wrapper extracts bounded W3C `traceparent` and
+`tracestate` context before Core creates its request span; applications may explicitly inject
+context into their own outbound request headers. It does not install automatic client
+instrumentation or change OpenTelemetry's global provider. Tests use the in-memory exporter and do
+not contact a collector or live telemetry backend.
+
+All seven package tests pass against both the source checkout and freshly installed wheel. Ruff,
+formatting, and strict mypy pass; wheel and source distributions build; the isolated install with
+both OTLP extras passes `pip check`, and import-origin checks resolve Core, testing, and tracing
+from `site-packages`. Core documentation, license-header, and package-boundary checks pass with the
+updated ownership entry. No live collector or telemetry backend was exercised. The local workspace
+now contains 26 sibling package repositories; 24 of the 41 requested catalog packages have a local
+package (the additional Prometheus and PostgreSQL adapter workspaces are not in that catalog),
+leaving 17 catalog entries without a local implementation. Core's separate release-readiness score
+remains **87/100**; external CI, release provenance, live-provider, and target-environment
+deployment gates remain outstanding.
+
+## Pull-request CI dependency and locked audit remediation (2026-10-05)
+
+Inspection of recent hosted PR runs showed all four Python matrix jobs failing on the second
+`actions/checkout` step, before dependency installation or tests. That step requests the separate
+`orbit-projects/orbit-testing` repository, which currently returns HTTP 404. The local sibling
+workspace exists and the frozen Core environment resolves against it, but hosted CI cannot use it
+until that repository is available at the configured public URL and `main` ref. Hosted PR CI is
+therefore still an external blocker; local green checks are not represented as hosted CI success.
+
+The same Core lockfile's audit environment resolved `urllib3 2.7.0` through the development-only
+`pip-audit` dependency chain (`pip-audit → cachecontrol → requests`). `uv.lock` now pins `urllib3`
+2.8.0, the fixed version reported by the audit feed. With that lock, a fresh frozen sync passes
+`uv lock --check`, `pip-audit --skip-editable` reports no known vulnerabilities, and `pip check`
+passes. Core's current Python 3.11 suite passes **1,037 tests at 91.70% coverage** (two opt-in
+hosting tests skipped in the default run); the opt-in Uvicorn/Gunicorn host tests pass **2/2**.
+Ruff, format, strict mypy, workflow/scorecard/model-boundary/documentation/license checks, wheel and
+source builds, and package-integrity checks pass locally. These results do not substitute for the
+unavailable hosted checkout or the other external release gates. The independent release-readiness
+score remains **87/100** and its stable-release gate remains open.
