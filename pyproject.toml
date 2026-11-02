@@ -53,7 +53,7 @@ dev = [
   "hatchling>=1.27",
   "pip-audit>=2.10,<3",
   "pip>=26.2,<27",
-  "uv==0.12.13",
+  "uv==0.13.6",
 ]
 
 [dependency-groups]
